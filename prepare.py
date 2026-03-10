@@ -100,37 +100,51 @@ class BacktestResult:
 # ---------------------------------------------------------------------------
 
 HL_INFO_URL = "https://api.hyperliquid.xyz/info"
-BINANCE_KLINES_URL = "https://fapi.binance.com/fapi/v1/klines"
+CRYPTOCOMPARE_URL = "https://min-api.cryptocompare.com/data/v2/histohour"
 
-def _download_binance_candles(symbol: str, interval: str, start_ms: int, end_ms: int) -> pd.DataFrame:
-    """Download OHLCV from Binance Futures as fallback."""
+def _download_cryptocompare_candles(symbol: str, start_ms: int, end_ms: int) -> pd.DataFrame:
+    """Download hourly OHLCV from CryptoCompare (no geo-restrictions)."""
     all_rows = []
-    current = start_ms
-    while current < end_ms:
+    # CryptoCompare uses 'toTs' (end timestamp in seconds) and returns up to 2000 bars
+    current_end = end_ms // 1000
+    start_s = start_ms // 1000
+
+    while current_end > start_s:
         params = {
-            "symbol": f"{symbol}USDT",
-            "interval": interval,
-            "startTime": current,
-            "endTime": end_ms,
-            "limit": 1500,
+            "fsym": symbol,
+            "tsym": "USD",
+            "limit": 2000,
+            "toTs": current_end,
         }
-        resp = requests.get(BINANCE_KLINES_URL, params=params, timeout=30)
+        resp = requests.get(CRYPTOCOMPARE_URL, params=params, timeout=30)
         resp.raise_for_status()
         data = resp.json()
-        if not data:
+        bars = data.get("Data", {}).get("Data", [])
+        if not bars:
             break
-        for row in data:
+        for bar in bars:
+            ts_s = bar["time"]
+            if ts_s < start_s:
+                continue
             all_rows.append({
-                "timestamp": int(row[0]),
-                "open": float(row[1]),
-                "high": float(row[2]),
-                "low": float(row[3]),
-                "close": float(row[4]),
-                "volume": float(row[5]),
+                "timestamp": ts_s * 1000,
+                "open": float(bar["open"]),
+                "high": float(bar["high"]),
+                "low": float(bar["low"]),
+                "close": float(bar["close"]),
+                "volume": float(bar.get("volumefrom", 0)),
             })
-        current = int(data[-1][0]) + 1
-        time.sleep(0.1)
-    return pd.DataFrame(all_rows)
+        # Move window back
+        earliest = bars[0]["time"]
+        if earliest >= current_end:
+            break
+        current_end = earliest - 1
+        time.sleep(0.3)
+
+    if not all_rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(all_rows).sort_values("timestamp").drop_duplicates("timestamp").reset_index(drop=True)
+    return df
 
 
 def _download_hl_funding(symbol: str, start_ms: int, end_ms: int) -> pd.DataFrame:
@@ -219,13 +233,13 @@ def download_data(symbols=None):
             print(f"  {symbol}: already have {len(existing)} bars")
             continue
 
-        print(f"  {symbol}: downloading candles...")
+        print(f"  {symbol}: downloading candles from CryptoCompare...")
 
-        # Try Hyperliquid first, fall back to Binance
-        df = _download_hl_candles(symbol, "1h", start_ms, end_ms)
+        # Use CryptoCompare for reliable historical OHLCV (no geo-restrictions)
+        df = _download_cryptocompare_candles(symbol, start_ms, end_ms)
         if len(df) < 100:
-            print(f"  {symbol}: HL data insufficient ({len(df)} bars), trying Binance...")
-            df = _download_binance_candles(symbol, "1h", start_ms, end_ms)
+            print(f"  {symbol}: CryptoCompare insufficient ({len(df)} bars), trying HL...")
+            df = _download_hl_candles(symbol, "1h", start_ms, end_ms)
 
         if df.empty:
             print(f"  {symbol}: NO DATA AVAILABLE, skipping")
