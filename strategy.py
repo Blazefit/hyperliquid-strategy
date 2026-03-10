@@ -1,11 +1,18 @@
 """
-Exp4: Ensemble voting + correlation regime + position pyramiding.
+Exp8: Best of exp4 + exp7.
 
-Build on exp3 (3.671):
-1. Ensemble: momentum, EMA, RSI must agree (2/3 minimum)
-2. Correlation regime: when BTC-ETH corr is high, reduce SOL weight (redundant)
-3. Pyramiding: add to winning positions at half-size
-4. Tighter take-profit with partial exits
+Take exp7's signal improvements:
+- 4-timeframe momentum (6h, 12h, 24h, 48h)
+- Lower dynamic threshold (0.012 base, range 0.006-0.025)
+- Relaxed BTC confirmation (only block on strong opposition)
+- 4-signal ensemble (3/4 required)
+
+Keep exp4's risk controls:
+- 0.14 base position (not 0.18)
+- vol_scale capped at 2.0
+- Same ATR stop and take-profit
+
+Add new: drawdown-adaptive position sizing
 """
 
 import numpy as np
@@ -14,33 +21,34 @@ from prepare import Signal, PortfolioState, BarData
 ACTIVE_SYMBOLS = ["BTC", "ETH", "SOL"]
 SYMBOL_WEIGHTS = {"BTC": 0.40, "ETH": 0.35, "SOL": 0.25}
 
-SHORT_WINDOW = 12
-MED_WINDOW = 24
+SHORT_WINDOW = 6
+MED_WINDOW = 12
+MED2_WINDOW = 24
 LONG_WINDOW = 48
-
 EMA_FAST = 12
 EMA_SLOW = 26
-
 RSI_PERIOD = 14
 RSI_BULL = 55
 RSI_BEAR = 45
 
 FUNDING_LOOKBACK = 24
 FUNDING_BOOST = 0.3
-
 BASE_POSITION_PCT = 0.14
 VOL_LOOKBACK = 48
 TARGET_VOL = 0.015
-
 ATR_LOOKBACK = 24
 ATR_STOP_MULT = 3.5
 TAKE_PROFIT_PCT = 0.06
-PYRAMID_THRESHOLD = 0.02  # add to winner after 2% move
+BASE_THRESHOLD = 0.012
+BTC_OPPOSE_THRESHOLD = -0.01
 
+PYRAMID_THRESHOLD = 0.02
 CORR_LOOKBACK = 72
 HIGH_CORR_THRESHOLD = 0.85
 
-BASE_THRESHOLD = 0.015
+# Drawdown management
+DD_REDUCE_THRESHOLD = 0.04  # start reducing at 4% DD
+DD_REDUCE_SCALE = 0.5  # reduce to 50% size at max DD
 
 def ema(values, span):
     alpha = 2.0 / (span + 1)
@@ -56,8 +64,8 @@ def calc_rsi(closes, period):
     deltas = np.diff(closes[-(period+1):])
     gains = np.where(deltas > 0, deltas, 0)
     losses = np.where(deltas < 0, -deltas, 0)
-    avg_gain = np.mean(gains) if len(gains) > 0 else 0
-    avg_loss = np.mean(losses) if len(losses) > 0 else 1e-10
+    avg_gain = np.mean(gains)
+    avg_loss = np.mean(losses)
     rs = avg_gain / max(avg_loss, 1e-10)
     return 100 - 100 / (1 + rs)
 
@@ -68,6 +76,7 @@ class Strategy:
         self.atr_at_entry = {}
         self.btc_momentum = 0.0
         self.pyramided = {}
+        self.peak_equity = 100000.0
 
     def _calc_atr(self, history, lookback):
         if len(history) < lookback + 1:
@@ -86,7 +95,6 @@ class Strategy:
         return max(np.std(log_rets), 1e-6)
 
     def _calc_correlation(self, bar_data):
-        """BTC-ETH return correlation over CORR_LOOKBACK."""
         if "BTC" not in bar_data or "ETH" not in bar_data:
             return 0.5
         btc_h = bar_data["BTC"].history
@@ -100,16 +108,21 @@ class Strategy:
         corr = np.corrcoef(btc_rets, eth_rets)[0, 1]
         return corr if not np.isnan(corr) else 0.5
 
-    def on_bar(self, bar_data: dict, portfolio: PortfolioState) -> list:
+    def on_bar(self, bar_data, portfolio):
         signals = []
         equity = portfolio.equity if portfolio.equity > 0 else portfolio.cash
 
-        # BTC momentum for lead-lag
+        # Track drawdown
+        self.peak_equity = max(self.peak_equity, equity)
+        current_dd = (self.peak_equity - equity) / self.peak_equity
+        dd_scale = 1.0
+        if current_dd > DD_REDUCE_THRESHOLD:
+            dd_scale = max(DD_REDUCE_SCALE, 1.0 - (current_dd - DD_REDUCE_THRESHOLD) * 5)
+
         if "BTC" in bar_data and len(bar_data["BTC"].history) >= LONG_WINDOW + 1:
             btc_closes = bar_data["BTC"].history["close"].values
-            self.btc_momentum = (btc_closes[-1] - btc_closes[-MED_WINDOW]) / btc_closes[-MED_WINDOW]
+            self.btc_momentum = (btc_closes[-1] - btc_closes[-MED2_WINDOW]) / btc_closes[-MED2_WINDOW]
 
-        # Correlation regime
         btc_eth_corr = self._calc_correlation(bar_data)
         high_corr = btc_eth_corr > HIGH_CORR_THRESHOLD
 
@@ -126,52 +139,48 @@ class Strategy:
             realized_vol = self._calc_vol(closes, VOL_LOOKBACK)
             vol_ratio = realized_vol / TARGET_VOL
             dyn_threshold = BASE_THRESHOLD * (0.5 + vol_ratio * 0.5)
-            dyn_threshold = max(0.008, min(0.03, dyn_threshold))
+            dyn_threshold = max(0.006, min(0.025, dyn_threshold))
 
-            # Signal 1: Multi-TF momentum
-            ret_short = (closes[-1] - closes[-SHORT_WINDOW]) / closes[-SHORT_WINDOW]
-            ret_med = (closes[-1] - closes[-MED_WINDOW]) / closes[-MED_WINDOW]
+            ret_vshort = (closes[-1] - closes[-SHORT_WINDOW]) / closes[-SHORT_WINDOW]
+            ret_short = (closes[-1] - closes[-MED_WINDOW]) / closes[-MED_WINDOW]
+            ret_med = (closes[-1] - closes[-MED2_WINDOW]) / closes[-MED2_WINDOW]
             ret_long = (closes[-1] - closes[-LONG_WINDOW]) / closes[-LONG_WINDOW]
+
             mom_bull = ret_short > dyn_threshold and ret_med > dyn_threshold * 0.8 and ret_long > 0
             mom_bear = ret_short < -dyn_threshold and ret_med < -dyn_threshold * 0.8 and ret_long < 0
+            vshort_bull = ret_vshort > dyn_threshold * 0.5
+            vshort_bear = ret_vshort < -dyn_threshold * 0.5
 
-            # Signal 2: EMA crossover
             ema_fast_arr = ema(closes[-(EMA_SLOW+10):], EMA_FAST)
             ema_slow_arr = ema(closes[-(EMA_SLOW+10):], EMA_SLOW)
             ema_bull = ema_fast_arr[-1] > ema_slow_arr[-1]
             ema_bear = ema_fast_arr[-1] < ema_slow_arr[-1]
 
-            # Signal 3: RSI
             rsi = calc_rsi(closes, RSI_PERIOD)
             rsi_bull = rsi > RSI_BULL
             rsi_bear = rsi < RSI_BEAR
 
-            # Ensemble: 2/3 must agree
-            bull_votes = sum([mom_bull, ema_bull, rsi_bull])
-            bear_votes = sum([mom_bear, ema_bear, rsi_bear])
+            bull_votes = sum([mom_bull, vshort_bull, ema_bull, rsi_bull])
+            bear_votes = sum([mom_bear, vshort_bear, ema_bear, rsi_bear])
 
-            # BTC confirmation for alts
             btc_confirm = True
             if symbol != "BTC":
-                if bull_votes >= 2 and self.btc_momentum <= 0:
+                if bull_votes >= 3 and self.btc_momentum < BTC_OPPOSE_THRESHOLD:
                     btc_confirm = False
-                elif bear_votes >= 2 and self.btc_momentum >= 0:
+                if bear_votes >= 3 and self.btc_momentum > -BTC_OPPOSE_THRESHOLD:
                     btc_confirm = False
 
-            bullish = bull_votes >= 2 and btc_confirm
-            bearish = bear_votes >= 2 and btc_confirm
+            bullish = bull_votes >= 3 and btc_confirm
+            bearish = bear_votes >= 3 and btc_confirm
 
-            # Position sizing with correlation adjustment
             vol_scale = min(2.0, max(0.3, TARGET_VOL / realized_vol))
             weight = SYMBOL_WEIGHTS.get(symbol, 0.33)
             if high_corr and symbol == "SOL":
-                weight *= 0.5  # reduce SOL when highly correlated
-            
+                weight *= 0.5
             mom_strength = abs(ret_short) / dyn_threshold
             strength_scale = min(1.5, max(0.7, mom_strength * 0.5 + 0.5))
-            size = equity * BASE_POSITION_PCT * weight * vol_scale * strength_scale
+            size = equity * BASE_POSITION_PCT * weight * vol_scale * strength_scale * dd_scale
 
-            # Funding
             funding_rates = bd.history["funding_rate"].values[-FUNDING_LOOKBACK:]
             avg_funding = np.mean(funding_rates) if len(funding_rates) >= FUNDING_LOOKBACK else 0.0
 
@@ -191,7 +200,6 @@ class Strategy:
                     target = -size * funding_mult
                     self.pyramided[symbol] = False
             else:
-                # Pyramiding: add half-size if winning by PYRAMID_THRESHOLD
                 if symbol in self.entry_prices and not self.pyramided.get(symbol, True):
                     entry = self.entry_prices[symbol]
                     pnl = (mid - entry) / entry
@@ -205,7 +213,6 @@ class Strategy:
                             target = current_pos - size * 0.5
                             self.pyramided[symbol] = True
 
-                # ATR trailing stop
                 atr = self._calc_atr(bd.history, ATR_LOOKBACK)
                 if atr is None:
                     atr = self.atr_at_entry.get(symbol, mid * 0.02)
@@ -224,7 +231,6 @@ class Strategy:
                     if mid > stop:
                         target = 0.0
 
-                # Take profit
                 if symbol in self.entry_prices:
                     entry = self.entry_prices[symbol]
                     pnl = (mid - entry) / entry
@@ -233,7 +239,6 @@ class Strategy:
                     if pnl > TAKE_PROFIT_PCT:
                         target = 0.0
 
-                # Flip
                 if current_pos > 0 and bearish:
                     target = -size
                 elif current_pos < 0 and bullish:
