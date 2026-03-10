@@ -1,7 +1,8 @@
 """
 Autotrader strategy file. This is the ONLY file the agent modifies.
-Everything is fair game: strategy logic, parameters, indicators, position sizing,
-risk management, signal generation. You can implement ANY strategy.
+
+Start simple. Beat the existing Nunchi production strategies.
+The agent should discover novel strategies, not just tune parameters.
 
 Usage: imported by backtest.py — do not run directly.
 """
@@ -14,12 +15,12 @@ from prepare import Signal, PortfolioState, BarData
 # Parameters
 # ---------------------------------------------------------------------------
 
-LOOKBACK = 24           # hours for momentum calculation
-POSITION_SIZE_PCT = 0.1 # 10% of equity per position
-STOP_LOSS_PCT = 0.03    # 3% stop loss
-TAKE_PROFIT_PCT = 0.06  # 6% take profit
-MOMENTUM_THRESHOLD = 0.02  # 2% move to trigger signal
-ACTIVE_SYMBOLS = ["BTC", "ETH"]
+LOOKBACK = 24
+POSITION_SIZE_PCT = 0.10
+STOP_LOSS_PCT = 0.03
+TAKE_PROFIT_PCT = 0.06
+MOMENTUM_THRESHOLD = 0.02
+ACTIVE_SYMBOLS = ["BTC", "ETH", "SOL"]
 
 # ---------------------------------------------------------------------------
 # Strategy
@@ -44,15 +45,13 @@ class Strategy:
             returns = (closes[-1] - closes[0]) / closes[0]
 
             current_pos = portfolio.positions.get(symbol, 0.0)
-            target_notional = current_pos  # default: hold
+            target_notional = current_pos
 
-            # Momentum signal
             if returns > MOMENTUM_THRESHOLD:
                 target_notional = equity * POSITION_SIZE_PCT
             elif returns < -MOMENTUM_THRESHOLD:
                 target_notional = -equity * POSITION_SIZE_PCT
 
-            # Stop loss / take profit on existing positions
             if current_pos != 0 and symbol in self.entry_prices:
                 entry = self.entry_prices[symbol]
                 if entry > 0:
@@ -62,15 +61,8 @@ class Strategy:
                     if pnl_pct < -STOP_LOSS_PCT or pnl_pct > TAKE_PROFIT_PCT:
                         target_notional = 0.0
 
-            # Only emit signal if position changes
             if abs(target_notional - current_pos) > 1.0:
-                signals.append(Signal(
-                    symbol=symbol,
-                    target_position=target_notional,
-                    order_type="market",
-                ))
-
-                # Track entry prices
+                signals.append(Signal(symbol=symbol, target_position=target_notional))
                 if target_notional != 0 and current_pos == 0:
                     self.entry_prices[symbol] = bd.close
                 elif target_notional == 0:

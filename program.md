@@ -2,124 +2,132 @@
 
 Autonomous trading strategy research on Hyperliquid perpetual futures.
 
+## Context
+
+This project adapts Karpathy's autoresearch pattern for trading strategy discovery.
+The owner (Nunchi) has existing production strategies that were designed for **tick-level market making** (20-second intervals). Those strategies underperform when ported to **hourly directional trading** on this backtest harness.
+
+Your job: **discover novel hourly-timeframe strategies** that outperform both the simple baseline AND the existing production strategies.
+
+## Current Leaderboard (your target to beat)
+
+```
+RANK  STRATEGY             SCORE     SHARPE   RETURN    MAX_DD   TRADES
+1.    simple_momentum      2.724     2.724    +42.6%    7.6%     9081     ← BASELINE TO BEAT
+2.    funding_arb          -0.191    -0.191   -1.3%     9.4%     1403
+3.    regime_mm            -0.322    -0.322   -3.1%     11.2%    12854
+4.    mean_reversion       -3.964    -3.380   -26.2%    26.7%    3185
+5.    avellaneda_mm        -999      (no trades — MM strategy doesn't port to hourly)
+6.    momentum_breakout    -999      (no trades — breakout too tight for hourly)
+```
+
+The baseline momentum strategy scores 2.724. **Your goal is to beat 2.724.**
+
+## Existing Strategy Concepts (from production codebase)
+
+These concepts are proven in live trading at tick-level. Adapt them for hourly:
+
+1. **Avellaneda-Stoikov**: reservation_price = mid - q * gamma * sigma^2 * T. Skew quotes based on inventory. The key insight: use inventory-awareness to size positions.
+2. **Vol regime classification**: Bin vol into 4 regimes (low/normal/high/extreme) with hysteresis. Adjust size and stops per regime. Immediate upshift, delayed downshift.
+3. **Funding rate carry**: Short when funding high (shorts get paid), long when negative. The carry component is real P&L on Hyperliquid perps.
+4. **Cross-venue funding arb**: When HL funding diverges from median, bias quotes. Asymmetric sizing: favor the side collecting premium.
+5. **Momentum breakout**: Enter on price breaking N-period range with volume confirmation. Trailing stops.
+6. **Risk multipliers**: Vol bin → size multiplier. Drawdown bin → spread/stop multiplier. Green/yellow/orange/red zones.
+
 ## Setup
 
 To set up a new experiment, work with the user to:
 
-1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar10`). The branch `autotrader/<tag>` must not already exist — this is a fresh run.
+1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar10`). The branch `autotrader/<tag>` must not already exist.
 2. **Create the branch**: `git checkout -b autotrader/<tag>` from current master.
-3. **Read the in-scope files**: The repo is small. Read these files for full context:
-   - `README.md` — repository context.
-   - `prepare.py` — fixed constants, data loading, backtesting engine, evaluation metric. Do not modify.
-   - `strategy.py` — the file you modify. Strategy logic, parameters, signals, position sizing.
-   - `backtest.py` — thin runner that imports strategy and runs backtest. Do not modify.
-4. **Verify data exists**: Check that `~/.cache/autotrader/data/` contains parquet files. If not, tell the human to run `uv run prepare.py`.
-5. **Initialize results.tsv**: Create `results.tsv` with just the header row. The baseline will be recorded after the first run.
-6. **Confirm and go**: Confirm setup looks good.
-
-Once you get confirmation, kick off the experimentation.
+3. **Read the in-scope files**: `prepare.py`, `strategy.py`, `backtest.py`, this file.
+4. **Verify data exists**: `ls ~/.cache/autotrader/data/`
+5. **Initialize results.tsv**: `echo -e "commit\tscore\tsharpe\tmax_dd\tstatus\tdescription" > results.tsv`
+6. **Confirm and go**.
 
 ## Experimentation
 
-Each experiment runs a backtest on historical Hyperliquid perp data (BTC, ETH, SOL). The backtest runs for a **fixed time budget of 2 minutes** max. You launch it simply as: `uv run backtest.py`.
+Each experiment runs a backtest on historical Hyperliquid perp data (BTC, ETH, SOL, hourly bars, Jul 2024 - Mar 2025). Launch: `uv run backtest.py`.
 
 **What you CAN do:**
-- Modify `strategy.py` — this is the only file you edit. Everything is fair game: entirely new strategy logic, new indicators, new position sizing, new risk management, multiple symbols, regime detection, funding rate arbitrage, mean reversion, trend following, statistical arbitrage, pairs trading, or any combination.
+- Modify `strategy.py` — this is the only file you edit. Everything is fair game.
 
 **What you CANNOT do:**
-- Modify `prepare.py` or `backtest.py`. They are read-only. They contain the fixed evaluation, backtesting engine, and constants.
-- Install new packages or add dependencies. You can only use numpy, pandas, scipy, and the standard library.
-- Modify the evaluation harness. `compute_score` in `prepare.py` is the ground truth metric.
-- Look at or use test set data. Only train and val splits are fair game. Optimize on val.
+- Modify `prepare.py`, `backtest.py`, or anything in `benchmarks/`.
+- Install new packages. Only numpy, pandas, scipy, and standard library.
+- Look at test set data.
 
-**The goal is simple: get the highest `score` on the validation set.** The score is a composite of Sharpe ratio, trade count, drawdown penalty, and turnover penalty. Higher is better. See `compute_score` in `prepare.py` for the exact formula.
-
-**Simplicity criterion**: All else being equal, simpler is better. A small improvement that adds ugly complexity is not worth it. Conversely, removing something and getting equal or better results is a great outcome — that's a simplification win.
-
-**The first run**: Your very first run should always be to establish the baseline, so you will run the backtest as is.
+**The goal: get the highest `score`.** Higher is better. Baseline is 2.724.
 
 ## Output format
-
-Once the script finishes it prints a summary like this:
-
-```
----
-score:              0.847200
-sharpe:             1.150000
-total_return_pct:   23.320000
-max_drawdown_pct:   12.450000
-num_trades:         142
-win_rate_pct:       55.200000
-profit_factor:      1.470000
-annual_turnover:    1234567.00
-backtest_seconds:   3.2
-total_seconds:      3.5
-```
-
-You can extract the key metric from the log file:
 
 ```
 grep "^score:" run.log
 ```
 
-## Logging results
-
-When an experiment is done, log it to `results.tsv` (tab-separated, NOT comma-separated).
-
-The TSV has a header row and 6 columns:
+## Results TSV
 
 ```
 commit	score	sharpe	max_dd	status	description
-```
-
-1. git commit hash (short, 7 chars)
-2. score achieved (e.g. 1.234567) — use -999.000000 for crashes
-3. sharpe ratio (e.g. 1.85) — use 0.0 for crashes
-4. max drawdown % (e.g. 12.3) — use 0.0 for crashes
-5. status: `keep`, `discard`, or `crash`
-6. short text description of what this experiment tried
-
-Example:
-
-```
-commit	score	sharpe	max_dd	status	description
-a1b2c3d	0.847200	1.15	12.5	keep	baseline momentum
-b2c3d4e	1.234500	1.85	8.3	keep	add funding rate signal
-c3d4e5f	0.650000	0.92	18.7	discard	aggressive leverage
-d4e5f6g	-999.000000	0.0	0.0	crash	syntax error in new indicator
 ```
 
 ## The experiment loop
 
-The experiment runs on a dedicated branch (e.g. `autotrader/mar10`).
-
 LOOP FOREVER:
 
-1. Look at the git state: the current branch/commit we're on
-2. Modify `strategy.py` with an experimental idea by directly hacking the code.
+1. Look at git state
+2. Modify `strategy.py` with an experimental idea
 3. git commit
-4. Run the experiment: `uv run backtest.py > run.log 2>&1` (redirect everything — do NOT use tee or let output flood your context)
-5. Read out the results: `grep "^score:\|^sharpe:\|^max_drawdown_pct:" run.log`
-6. If the grep output is empty, the run crashed. Run `tail -n 50 run.log` to read the Python stack trace and attempt a fix. If you can't get things to work after more than a few attempts, give up.
-7. Record the results in the tsv (NOTE: do not commit the results.tsv file, leave it untracked by git)
-8. If score improved (higher), you "advance" the branch, keeping the git commit
-9. If score is equal or worse, you git reset back to where you started
+4. `uv run backtest.py > run.log 2>&1`
+5. `grep "^score:\|^sharpe:\|^max_drawdown_pct:" run.log`
+6. If empty → crashed. `tail -n 50 run.log`, fix or skip.
+7. Record in results.tsv (untracked)
+8. If score IMPROVED (higher than best so far): keep
+9. If score equal or worse: `git reset --hard HEAD~1`
 
-## Strategy research directions
+## Strategy Research Directions
 
-Here are ideas to explore. Mix, combine, and iterate:
+Start with these high-probability ideas:
 
-- **Trend following**: Adaptive lookback, multiple timeframes, breakout detection
-- **Mean reversion**: Bollinger bands, z-score on returns, pair correlations
-- **Funding rate arbitrage**: Short when funding high, long when negative — capture carry
-- **Cross-asset momentum**: BTC leads alts, use BTC momentum to trade ETH/SOL
-- **Volatility regime detection**: High vol = reduce size/widen stops, low vol = increase size
-- **Dynamic position sizing**: Kelly criterion, risk parity, inverse volatility weighting
-- **Multi-timeframe confluence**: Require agreement across 4h, 24h, 72h signals
-- **Correlation trading**: When BTC-ETH correlation breaks, trade the reversion
-- **Volume profile**: Volume-weighted signals, unusual volume detection
-- **Ensemble methods**: Combine multiple signal generators, vote on direction
-- **Adaptive parameters**: Use recent performance to adjust thresholds dynamically
-- **Market microstructure**: Spread patterns, volume imbalance as directional signals
+### Tier 1 — Most Likely to Improve Score
+- **Add SOL with lower weight** — diversification should help Sharpe
+- **Vol-regime adaptive sizing** — reduce positions in high vol, increase in low vol (proven concept from production)
+- **Multi-timeframe momentum** — require 12h, 24h, 48h agreement before entry
+- **ATR-based trailing stops** — current fixed stops are suboptimal
+- **Funding carry overlay** — add carry component on top of momentum
 
-**NEVER STOP**: Once the experiment loop has begun (after the initial setup), do NOT pause to ask the human if you should continue. Do NOT ask "should I keep going?" or "is this a good stopping point?". The human might be asleep, or gone from a computer and expects you to continue working *indefinitely* until you are manually stopped. You are autonomous. If you run out of ideas, think harder — try combining previous near-misses, try more radical strategy changes, revisit failed experiments with different parameters. The loop runs until the human interrupts you, period.
+### Tier 2 — Worth Exploring
+- **EMA crossover instead of raw momentum** — smoother signals, fewer whipsaws
+- **Cross-asset lead-lag** — BTC momentum predicts ETH/SOL 1-6h later
+- **Dynamic threshold** — adjust momentum entry threshold by recent vol
+- **Inverse vol position sizing** — proven in production risk framework
+- **Ensemble voting** — combine 3+ signals, only enter when majority agree
+
+### Tier 3 — Radical / Novel
+- **Pure mean reversion on funding rate** — trade the mean reversion of funding itself
+- **Correlation regime switching** — different strategies for high/low BTC-ETH correlation
+- **Pairs trading** — long ETH/short BTC (or vice versa) on relative value
+- **Time-of-day patterns** — are there hourly seasonality patterns?
+- **Volatility breakout** — enter when realized vol breaks above/below its own SMA
+- **Machine learning lite** — rolling linear regression of features → direction
+
+## Data Available
+
+- BTC, ETH, SOL hourly OHLCV + funding rates
+- Val period: 2024-07-01 to 2025-03-31
+- History buffer: last 500 bars via `bar_data[symbol].history` DataFrame
+- Columns: timestamp, open, high, low, close, volume, funding_rate
+
+## Scoring Formula (from prepare.py)
+
+```
+score = sharpe * sqrt(trade_count_factor) - drawdown_penalty - turnover_penalty
+trade_count_factor = min(num_trades / 50, 1.0)
+drawdown_penalty = max(0, max_drawdown_pct - 15) * 0.05
+turnover_penalty = max(0, annual_turnover/capital - 500) * 0.001
+Hard cutoffs: <10 trades → -999, >50% drawdown → -999, lost >50% → -999
+```
+
+## NEVER STOP
+
+Once the experiment loop has begun, do NOT pause to ask the human if you should continue. You are autonomous. If you run out of ideas, think harder. The loop runs until interrupted.
