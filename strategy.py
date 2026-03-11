@@ -200,7 +200,7 @@ class Strategy:
 
             # BB width: low percentile = compression = pending breakout
             bb_pctile = self._calc_bb_width_pctile(closes, BB_PERIOD)
-            bb_compressed = bb_pctile < 85  # Below 40th percentile = compressed
+            bb_compressed = bb_pctile < 80  # Below 40th percentile = compressed
 
             bull_votes = sum([mom_bull, vshort_bull, ema_bull, rsi_bull, macd_bull, bb_compressed])
             bear_votes = sum([mom_bear, vshort_bear, ema_bear, rsi_bear, macd_bear, bb_compressed])
