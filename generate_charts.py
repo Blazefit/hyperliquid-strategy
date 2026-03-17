@@ -519,6 +519,214 @@ def chart8_complexity_vs_performance(exps):
     print("✓ Chart 8: Complexity vs Performance")
 
 
+def chart9_score_impact_waterfall(exps):
+    """Waterfall chart showing each kept strategy's delta contribution from 2.7 → 20.6."""
+    keeps = [e for e in exps if e['status'] == 'keep']
+
+    # Compute deltas between consecutive keeps
+    deltas = []
+    for i, k in enumerate(keeps):
+        if i == 0:
+            deltas.append({'desc': k['description'], 'delta': k['score'], 'cumulative': k['score']})
+        else:
+            d = k['score'] - keeps[i - 1]['score']
+            deltas.append({'desc': k['description'], 'delta': d, 'cumulative': k['score']})
+
+    fig, ax = plt.subplots(figsize=(18, 8))
+    fig.patch.set_facecolor(BG)
+    ax.set_facecolor(BG)
+
+    n = len(deltas)
+    x = np.arange(n)
+    bottoms = []
+    colors = []
+    heights = []
+
+    for i, d in enumerate(deltas):
+        if i == 0:
+            bottoms.append(0)
+        else:
+            bottoms.append(deltas[i - 1]['cumulative'])
+        heights.append(d['delta'])
+        colors.append(ACCENT_GREEN if d['delta'] >= 0 else ACCENT_RED)
+
+    bars = ax.bar(x, heights, bottom=bottoms, color=colors, width=0.7, edgecolor='none', alpha=0.85)
+
+    # Connector lines between bars
+    for i in range(n - 1):
+        top = bottoms[i] + heights[i]
+        ax.plot([i + 0.35, i + 0.65], [top, top], color=MUTED, linewidth=0.8, linestyle='--')
+
+    # Labels on bars with significant deltas
+    for i, (bar, d) in enumerate(zip(bars, deltas)):
+        if abs(d['delta']) > 0.3 or i == 0:
+            y_pos = bottoms[i] + heights[i] / 2
+            label = f"+{d['delta']:.1f}" if d['delta'] >= 0 else f"{d['delta']:.1f}"
+            ax.text(i, y_pos, label, ha='center', va='center', fontsize=7,
+                    color='white', fontweight='bold')
+
+    # X-axis labels — truncate descriptions
+    labels = [d['desc'][:18] for d in deltas]
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=75, ha='right', fontsize=6.5, color=MUTED)
+
+    ax.set_ylabel('Score', fontsize=13, color=TEXT_COLOR, labelpad=10)
+    ax.set_title('Score Impact Waterfall — How Each Keep Decision Built the Final Score',
+                 fontsize=17, color='white', fontweight='bold', pad=20)
+    ax.grid(True, axis='y', alpha=0.1, color=GRID_COLOR)
+    ax.tick_params(axis='y', colors=MUTED)
+    for spine in ax.spines.values():
+        spine.set_color(GRID_COLOR)
+
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / '9_score_impact_waterfall.png', dpi=200, bbox_inches='tight',
+                facecolor=BG, edgecolor='none')
+    plt.close(fig)
+    print("✓ Chart 9: Score impact waterfall")
+
+
+def chart10_kept_vs_all_path(exps):
+    """Kept path vs hypothetical all-experiments path — shows AI selectivity."""
+    # Running best from keeps only (actual path)
+    kept_best = []
+    best_kept = -999
+    for e in exps:
+        if e['status'] == 'keep':
+            best_kept = max(best_kept, e['score'])
+        kept_best.append(best_kept)
+
+    # Running best if we also accepted any discard that beat current best
+    all_best = []
+    best_all = -999
+    for e in exps:
+        best_all = max(best_all, e['score'])
+        all_best.append(best_all)
+
+    idxs = list(range(len(exps)))
+
+    fig, ax = plt.subplots(figsize=(16, 8))
+    fig.patch.set_facecolor(BG)
+    ax.set_facecolor(BG)
+
+    ax.fill_between(idxs, kept_best, alpha=0.08, color=ACCENT_GREEN)
+    ax.plot(idxs, kept_best, color=ACCENT_GREEN, linewidth=2.5, label='Kept Path (actual)', zorder=3)
+    ax.plot(idxs, all_best, color=ACCENT_ORANGE, linewidth=2, linestyle='--',
+            label='Best-Score Path (if all accepted)', zorder=2, alpha=0.8)
+
+    # Shade the gap
+    ax.fill_between(idxs, kept_best, all_best, alpha=0.06, color=ACCENT_ORANGE)
+
+    # Annotate key divergences
+    max_gap = 0
+    max_gap_idx = 0
+    for i in range(len(idxs)):
+        gap = all_best[i] - kept_best[i]
+        if gap > max_gap:
+            max_gap = gap
+            max_gap_idx = i
+
+    if max_gap > 0.5:
+        ax.annotate(f'Max gap: {max_gap:.1f}\n(discards had higher score\nbut worse risk profile)',
+                    (max_gap_idx, (kept_best[max_gap_idx] + all_best[max_gap_idx]) / 2),
+                    xytext=(30, 30), textcoords='offset points',
+                    fontsize=9, color=ACCENT_ORANGE, fontweight='bold',
+                    arrowprops=dict(arrowstyle='->', color=MUTED, lw=1))
+
+    # Insight box
+    final_kept = kept_best[-1]
+    final_all = all_best[-1]
+    insight = f'Final: Kept={final_kept:.1f}, All={final_all:.1f}'
+    ax.text(0.98, 0.05, insight, transform=ax.transAxes, ha='right', va='bottom',
+            fontsize=11, color=TEXT_COLOR, fontweight='bold',
+            bbox=dict(boxstyle='round,pad=0.5', facecolor=CARD_BG, edgecolor=GRID_COLOR))
+
+    ax.set_xlabel('Experiment #', fontsize=13, color=TEXT_COLOR, labelpad=10)
+    ax.set_ylabel('Running Best Score', fontsize=13, color=TEXT_COLOR, labelpad=10)
+    ax.set_title('AI Selectivity — Kept Path vs Accept-Everything Path',
+                 fontsize=17, color='white', fontweight='bold', pad=20)
+    ax.legend(loc='upper left', fontsize=11, framealpha=0.3)
+    ax.grid(True, alpha=0.15, color=GRID_COLOR)
+    ax.set_xlim(-2, 106)
+    ax.tick_params(colors=MUTED)
+    for spine in ax.spines.values():
+        spine.set_color(GRID_COLOR)
+
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / '10_kept_vs_all_path.png', dpi=200, bbox_inches='tight',
+                facecolor=BG, edgecolor='none')
+    plt.close(fig)
+    print("✓ Chart 10: Kept path vs all-experiments path")
+
+
+def chart11_per_experiment_delta(exps):
+    """Per-experiment delta from running best — the search landscape."""
+    # Compute running best (keeps only) at each experiment
+    running_best = []
+    best = -999
+    for e in exps:
+        if e['status'] == 'keep':
+            best = max(best, e['score'])
+        running_best.append(best)
+
+    # Delta = experiment score - running best at that point
+    # For the very first experiment, compare against 0
+    deltas = []
+    for i, e in enumerate(exps):
+        rb = running_best[i - 1] if i > 0 else 0
+        deltas.append(e['score'] - rb)
+
+    fig, ax = plt.subplots(figsize=(18, 7))
+    fig.patch.set_facecolor(BG)
+    ax.set_facecolor(BG)
+
+    idxs = np.arange(len(exps))
+    colors = []
+    for i, (d, e) in enumerate(zip(deltas, exps)):
+        if d > 0 and e['status'] == 'keep':
+            colors.append(ACCENT_GREEN)
+        elif d > 0 and e['status'] == 'discard':
+            colors.append(ACCENT_ORANGE)  # beat running best but discarded (risk issues)
+        else:
+            colors.append(ACCENT_RED)
+
+    ax.bar(idxs, deltas, color=colors, width=0.8, edgecolor='none', alpha=0.75)
+    ax.axhline(y=0, color=MUTED, linewidth=1, linestyle='-')
+
+    # Legend
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor=ACCENT_GREEN, alpha=0.75, label='Improvement (kept)'),
+        Patch(facecolor=ACCENT_ORANGE, alpha=0.75, label='Beat best but discarded (risk)'),
+        Patch(facecolor=ACCENT_RED, alpha=0.75, label='Below running best'),
+    ]
+    ax.legend(handles=legend_elements, loc='upper right', fontsize=10, framealpha=0.3)
+
+    # Stats annotation
+    n_improve = sum(1 for d, e in zip(deltas, exps) if d > 0 and e['status'] == 'keep')
+    n_beat_discard = sum(1 for d, e in zip(deltas, exps) if d > 0 and e['status'] == 'discard')
+    n_below = sum(1 for d in deltas if d <= 0)
+    stats = f'{n_improve} improvements kept  |  {n_beat_discard} beat best but discarded  |  {n_below} below running best'
+    ax.text(0.5, 0.97, stats, transform=ax.transAxes, ha='center', va='top',
+            fontsize=10, color=TEXT_COLOR,
+            bbox=dict(boxstyle='round,pad=0.4', facecolor=CARD_BG, edgecolor=GRID_COLOR))
+
+    ax.set_xlabel('Experiment #', fontsize=13, color=TEXT_COLOR, labelpad=10)
+    ax.set_ylabel('Score Delta from Running Best', fontsize=13, color=TEXT_COLOR, labelpad=10)
+    ax.set_title('Search Landscape — How Many Experiments to Find Each Improvement',
+                 fontsize=17, color='white', fontweight='bold', pad=20)
+    ax.grid(True, axis='y', alpha=0.1, color=GRID_COLOR)
+    ax.set_xlim(-1, 105)
+    ax.tick_params(colors=MUTED)
+    for spine in ax.spines.values():
+        spine.set_color(GRID_COLOR)
+
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / '11_per_experiment_delta.png', dpi=200, bbox_inches='tight',
+                facecolor=BG, edgecolor='none')
+    plt.close(fig)
+    print("✓ Chart 11: Per-experiment delta")
+
+
 def main():
     print("Loading experiment data...")
     exps = load_results()
@@ -534,6 +742,9 @@ def main():
     chart6_top_discoveries(exps)
     chart7_final_strategy_architecture()
     chart8_complexity_vs_performance(exps)
+    chart9_score_impact_waterfall(exps)
+    chart10_kept_vs_all_path(exps)
+    chart11_per_experiment_delta(exps)
 
     print(f"\n✅ All charts saved to {OUTPUT_DIR}/")
     print("\nFiles generated:")

@@ -103,7 +103,23 @@ That's exactly what we did — except the student is Claude (an AI), and it ran 
 
 ---
 
-## Tweet 6 — Risk Went to Nearly Zero
+## Tweet 6 — Every Brick in the Wall
+
+> This waterfall chart shows how every single "keep" decision stacked up to build the final score.
+>
+> Each green block is one kept experiment's contribution. Some added +0.2. Others added +2.7.
+>
+> **44 bricks, each one placed by the AI, from 2.7 to 20.6.**
+>
+> The big jumps? Removing "strength scaling" (+1.7) and tuning RSI to period 8 (+2.7). But most of the score came from dozens of tiny, boring improvements that compounded.
+
+![Score Impact Waterfall — a staircase of green blocks rising from 2.7 to 20.6. Each block is one kept experiment's contribution to the final score.](charts/9_score_impact_waterfall.png)
+
+*This is what compound improvement looks like. No single experiment was a silver bullet — the magic is in the accumulation.*
+
+---
+
+## Tweet 7 — Risk Went to Nearly Zero
 
 > The strategy didn't just make more money — it got dramatically safer.
 >
@@ -121,7 +137,7 @@ That's exactly what we did — except the student is Claude (an AI), and it ran 
 
 ---
 
-## Tweet 7 — The Final Strategy
+## Tweet 8 — The Final Strategy
 
 > After 251 experiments, here's what the AI converged on — remarkably elegant:
 >
@@ -140,7 +156,7 @@ That's exactly what we did — except the student is Claude (an AI), and it ran 
 
 ---
 
-## Tweet 8 — By the Numbers
+## Tweet 9 — By the Numbers
 
 > The full stats:
 >
@@ -157,7 +173,61 @@ That's exactly what we did — except the student is Claude (an AI), and it ran 
 
 ---
 
-## Tweet 9 — Why This Matters
+## Tweet 10 — The Search Landscape
+
+> Every bar here is one experiment. Green = improvement (kept). Red = made things worse (discarded). Orange = beat the running best but got rejected anyway for risk reasons.
+>
+> Look at the deep red bars — experiment 17 scored **-10 below the running best**. Experiment 91 hit **-13**. These are catastrophic failures the AI correctly threw away.
+>
+> Meanwhile, the green bars get smaller over time. Finding improvements gets harder as the strategy matures — but the AI kept finding them.
+
+![Search Landscape — bar chart showing every experiment's delta from the running best. 43 green bars above zero (kept), 59 red bars below (discarded), 1 orange bar (beat best but discarded for risk).](charts/11_per_experiment_delta.png)
+
+*This is what the "search space" of trading strategies looks like. Mostly failures. A few winners. And one interesting outlier the AI was smart enough to reject despite a higher score — because the risk profile was wrong.*
+
+---
+
+## Tweet 11 — Was the AI Actually Smart About It?
+
+> Here's the question that matters: **was the AI's selectivity actually good, or did it just get lucky?**
+>
+> This chart compares two paths:
+> - **Green line** — what actually happened (only keep improvements)
+> - **Orange line** — what would have happened if the AI accepted everything blindly
+>
+> They converge at the same endpoint (20.6). The AI's filtering was perfectly calibrated — it never rejected an experiment that would have helped long-term.
+>
+> The selective path was smoother and more stable. The "accept everything" path would have been a wild ride with the same destination.
+
+![Kept Path vs Accept-Everything Path — two lines tracking running best score over 103 experiments. They nearly overlap and converge at 20.6, showing the AI's selectivity was well-calibrated.](charts/10_kept_vs_all_path.png)
+
+*The AI wasn't just randomly filtering — it understood which changes improved the strategy and which ones were fool's gold.*
+
+---
+
+## Tweet 12 — "But Isn't This Just Overfitting?"
+
+> The first question any quant will ask: **"You ran 251 experiments on the same data — isn't the final strategy just memorizing the validation set?"**
+>
+> Fair question. Here's why we think the risk is lower than it looks:
+>
+> **1. The strategy got SIMPLER, not more complex.**
+> Overfitting looks like adding parameters until the model memorizes noise. This AI did the opposite — it deleted 9 features and ended up with fewer parameters than it started with. That's regularization by instinct.
+>
+> **2. There's a held-out test set that was NEVER touched.**
+> The data is split into three periods: Train (Jun '23–Jun '24), Validation (Jul '24–Mar '25), and Test (Apr '25–Dec '25). All 251 experiments ran on the validation window only. The test set was explicitly forbidden — the AI was never allowed to peek at it.
+>
+> **3. The scoring function penalizes complexity.**
+> The composite score isn't just Sharpe ratio — it includes drawdown penalties and turnover penalties. Strategies that "cheat" by over-trading or taking concentrated bets get punished.
+>
+> **4. The improvements are interpretable, not magical.**
+> RSI(8) beats RSI(14) on hourly crypto because the market moves faster than 1970s daily stocks. Removing strength scaling works because it was adding noise to position sizes. These aren't mysterious curve fits — they're explainable edge.
+>
+> Is it proof against overfitting? No. That's what the untouched test set is for — and we'll run it. But the direction of travel (simpler, more robust, interpretable changes) is the opposite of what overfitting usually looks like.
+
+---
+
+## Tweet 13 — Why This Matters
 
 > This is part of a bigger movement called **"autoresearch"** — letting AI run its own research loops:
 >
@@ -171,7 +241,7 @@ That's exactly what we did — except the student is Claude (an AI), and it ran 
 
 ---
 
-## Tweet 10 — Open Source
+## Tweet 14 — Open Source
 
 > Everything is open source — the full evolution log with math for every single experiment.
 >
@@ -194,6 +264,10 @@ All charts are in the [`charts/`](charts/) folder:
 | 3 | `3_simplification.png` | Each feature removal and its impact on performance |
 | 4 | `8_complexity_vs_performance.png` | Complexity going down while performance goes up |
 | 5 | `6_top_discoveries.png` | The 10 biggest individual improvements ranked |
-| 6 | `4_drawdown_evolution.png` | Risk dropping from 7.6% to 0.3% over time |
-| 7 | `7_strategy_architecture.png` | Visual diagram of the final strategy |
-| 8 | `5_keep_discard.png` | Success rate and score distribution |
+| 6 | `9_score_impact_waterfall.png` | How each kept decision stacked up to build the final score |
+| 7 | `4_drawdown_evolution.png` | Risk dropping from 7.6% to 0.3% over time |
+| 8 | `7_strategy_architecture.png` | Visual diagram of the final strategy |
+| 9 | `5_keep_discard.png` | Success rate and score distribution |
+| 10 | `11_per_experiment_delta.png` | Search landscape — every experiment's delta from running best |
+| 11 | `10_kept_vs_all_path.png` | AI selectivity — kept path vs accept-everything path |
+| 12 | *(no chart)* | Addressing overfitting concerns |
