@@ -4,3 +4,14 @@ __pycache__/
 *.pyc
 .cache/
 .venv/
+.DS_Store
+
+# Live trader
+.env
+trader.db
+trader.db-wal
+trader.db-shm
+trader.log
+trader.pid
+dashboard.log
+dashboard.pid

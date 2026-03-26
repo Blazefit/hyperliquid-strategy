@@ -28,14 +28,14 @@ GRID_COLOR = '#21262d'
 TEXT_COLOR = '#c9d1d9'
 MUTED = '#8b949e'
 
-OUTPUT_DIR = Path('/Users/jae_lee/auto-researchtrading/charts')
+OUTPUT_DIR = Path('/Users/jasonanderson/auto-researchtrading/charts')
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 
 def load_results():
     """Parse results.tsv into structured data."""
     experiments = []
-    with open('/Users/jae_lee/auto-researchtrading/results.tsv') as f:
+    with open('/Users/jasonanderson/auto-researchtrading/results.tsv') as f:
         header = f.readline()  # skip header
         for i, line in enumerate(f):
             parts = line.strip().split('\t')
@@ -132,14 +132,14 @@ def chart2_before_after(exps):
     """Before vs After dashboard — the hero metrics."""
     fig, axes = plt.subplots(1, 4, figsize=(18, 5))
     fig.patch.set_facecolor(BG)
-    fig.suptitle('From Baseline to Final: 7.9x Improvement', fontsize=20, color='white',
+    fig.suptitle('From Baseline to Final: 4.6x Improvement', fontsize=20, color='white',
                  fontweight='bold', y=1.02)
 
     metrics = [
-        ('Sharpe Ratio', 2.724, 21.402, ACCENT_GREEN, ''),
-        ('Max Drawdown', 7.6, 0.3, ACCENT_RED, '%'),
-        ('Total Return', 42.6, 130.0, ACCENT_BLUE, '%'),
-        ('Score', 2.724, 21.402, ACCENT_PURPLE, ''),
+        ('Sharpe Ratio', 2.724, 12.504, ACCENT_GREEN, ''),
+        ('Max Drawdown', 7.6, 0.77, ACCENT_RED, '%'),
+        ('Total Return', 42.6, 30.3, ACCENT_BLUE, '%'),
+        ('Score', 2.724, 12.504, ACCENT_PURPLE, ''),
     ]
 
     for ax, (name, before, after, color, suffix) in zip(axes, metrics):
@@ -385,27 +385,26 @@ def chart7_final_strategy_architecture():
     ax.axis('off')
 
     # Title
-    ax.text(50, 96, 'Final Strategy Architecture (exp103, Score 21.4)',
+    ax.text(50, 96, 'Final Strategy Architecture (Realistic, Score 12.5)',
             ha='center', va='top', fontsize=20, color='white', fontweight='bold')
-    ax.text(50, 92, 'BTC / ETH / SOL  •  Hourly  •  Equal Weight  •  8% Position Size',
+    ax.text(50, 92, 'BTC / ETH / SOL  •  Hourly  •  Equal Weight  •  8% Position Size  •  10%/25% Limits',
             ha='center', va='top', fontsize=12, color=MUTED)
 
-    # Signal boxes
+    # Signal boxes — 5 directional signals
     signals = [
         ('12h Momentum', 'ret > dyn_threshold', ACCENT_BLUE),
-        ('6h V-Short Mom', 'ret > thresh × 0.7', ACCENT_BLUE),
-        ('EMA Crossover', 'EMA(7) vs EMA(26)', ACCENT_PURPLE),
-        ('RSI(8)', '> 50 bull / < 50 bear', ACCENT_GREEN),
-        ('MACD(14,23,9)', 'histogram > 0', ACCENT_ORANGE),
-        ('BB Compress', 'width < 85th pctile', ACCENT_CYAN),
+        ('6h V-Short Mom', 'ret > thresh × 0.5', ACCENT_BLUE),
+        ('EMA Crossover', 'EMA(12) vs EMA(26)', ACCENT_PURPLE),
+        ('RSI(14)', '> 50 bull / < 50 bear', ACCENT_GREEN),
+        ('MACD(12,26,9)', 'histogram > 0', ACCENT_ORANGE),
     ]
 
     box_w, box_h = 13, 10
-    start_x = 5
+    start_x = 8
     y_sig = 72
 
     for i, (name, formula, color) in enumerate(signals):
-        x = start_x + i * 15.5
+        x = start_x + i * 16.5
         rect = plt.Rectangle((x, y_sig), box_w, box_h, linewidth=2,
                               edgecolor=color, facecolor=color + '15', clip_on=False)
         ax.add_patch(rect)
@@ -413,26 +412,39 @@ def chart7_final_strategy_architecture():
                 fontsize=10, color=color, fontweight='bold')
         ax.text(x + box_w/2, y_sig + 2, formula, ha='center', va='bottom',
                 fontsize=8, color=MUTED)
-        # Arrow down
+        # Arrow down to vote box
         ax.annotate('', xy=(x + box_w/2, 60), xytext=(x + box_w/2, y_sig),
                     arrowprops=dict(arrowstyle='->', color=MUTED, lw=1.2))
 
+    # BB compression gate (separate box, to the right)
+    bb_x, bb_y = 80, 56
+    bb_rect = plt.Rectangle((bb_x, bb_y - 4), 16, 8, linewidth=2,
+                              edgecolor=ACCENT_CYAN, facecolor=ACCENT_CYAN + '15')
+    ax.add_patch(bb_rect)
+    ax.text(bb_x + 8, bb_y + 1.5, 'BB Gate', ha='center', va='center',
+            fontsize=10, color=ACCENT_CYAN, fontweight='bold')
+    ax.text(bb_x + 8, bb_y - 1.5, 'width < 60th pctile', ha='center', va='center',
+            fontsize=8, color=MUTED)
+    # Arrow from BB gate into vote box
+    ax.annotate('', xy=(75, 56), xytext=(bb_x, 56),
+                arrowprops=dict(arrowstyle='->', color=ACCENT_CYAN, lw=1.5))
+
     # Voting box
-    vote_rect = plt.Rectangle((25, 52), 50, 8, linewidth=2.5,
+    vote_rect = plt.Rectangle((20, 52), 55, 8, linewidth=2.5,
                                edgecolor=ACCENT_GREEN, facecolor=ACCENT_GREEN + '15')
     ax.add_patch(vote_rect)
-    ax.text(50, 56, '4/6 MAJORITY VOTE', ha='center', va='center',
-            fontsize=16, color=ACCENT_GREEN, fontweight='bold')
+    ax.text(47.5, 56, '4/5 MAJORITY VOTE + BB GATE', ha='center', va='center',
+            fontsize=14, color=ACCENT_GREEN, fontweight='bold')
 
     # Arrow down from vote
-    ax.annotate('', xy=(50, 42), xytext=(50, 52),
+    ax.annotate('', xy=(47.5, 42), xytext=(47.5, 52),
                 arrowprops=dict(arrowstyle='->', color=MUTED, lw=2))
 
     # Exit conditions
     exits = [
-        ('ATR Trailing Stop', '5.5× ATR from peak', ACCENT_RED, 20),
-        ('RSI Mean-Reversion', 'RSI > 69 or RSI < 31', ACCENT_ORANGE, 42),
-        ('Signal Flip', 'Reverse directly\n(never exit flat)', ACCENT_PURPLE, 64),
+        ('ATR Trailing Stop', '5.5× ATR (4.5× in profit)', ACCENT_RED, 15),
+        ('RSI Mean-Reversion', 'RSI > 70 or RSI < 30', ACCENT_ORANGE, 40),
+        ('Signal Flip', 'Reverse on opposite\nsignal consensus', ACCENT_PURPLE, 65),
     ]
 
     for name, desc, color, x in exits:
@@ -444,12 +456,12 @@ def chart7_final_strategy_architecture():
         ax.text(x + 11, 28.5, desc, ha='center', va='center',
                 fontsize=9, color=MUTED)
 
-    ax.text(50, 44, 'EXIT CONDITIONS (priority order)', ha='center', va='center',
+    ax.text(47.5, 44, 'EXIT CONDITIONS (priority order)', ha='center', va='center',
             fontsize=12, color=ACCENT_RED, fontweight='bold')
 
     # Key params at bottom
-    params_text = ('Key: 2-bar cooldown  •  Dynamic momentum threshold  •  '
-                   'Realistic fees (2bp maker, 5bp taker, 1bp slippage)  •  $100K initial')
+    params_text = ('Key: 3-bar cooldown  •  BTC confirmation for alts  •  DD scaling at 5%  •  '
+                   'Fees (2bp maker, 5bp taker, 1bp slippage)  •  $100K initial')
     ax.text(50, 18, params_text, ha='center', va='center', fontsize=10, color=MUTED,
             style='italic')
 
@@ -457,7 +469,7 @@ def chart7_final_strategy_architecture():
     results_rect = plt.Rectangle((10, 5), 80, 10, linewidth=1.5,
                                   edgecolor=ACCENT_GREEN, facecolor=ACCENT_GREEN + '08')
     ax.add_patch(results_rect)
-    ax.text(50, 10, 'Sharpe 21.4  |  Max DD 0.3%  |  ~130% Return  |  7,949 Trades  |  9mo Backtest',
+    ax.text(50, 10, 'Sharpe 12.5  |  Max DD 0.8%  |  +30% Return  |  2,169 Trades  |  Consistent across 3 splits',
             ha='center', va='center', fontsize=13, color=ACCENT_GREEN, fontweight='bold')
 
     fig.savefig(OUTPUT_DIR / '7_strategy_architecture.png', dpi=200, bbox_inches='tight',
@@ -732,7 +744,7 @@ def chart11_per_experiment_delta(exps):
 
 def chart12_equity_curve():
     """Chart 12: Portfolio equity curve (PNL over time)."""
-    csv_path = Path('/Users/jae_lee/auto-researchtrading/equity_curve.csv')
+    csv_path = Path('/Users/jasonanderson/auto-researchtrading/equity_curve.csv')
     if not csv_path.exists():
         print("⚠ Skipping Chart 12: equity_curve.csv not found (run export_equity.py first)")
         return
@@ -828,10 +840,10 @@ def chart13_equity_evolution():
         ("equity_curve_exp15.csv",    "Exp 15: Ensemble (8.4)", ACCENT_ORANGE, 0.7, '-'),
         ("equity_curve_exp46.csv",    "Exp 46: Simplified (13.5)", ACCENT_PURPLE, 0.7, '-'),
         ("equity_curve_exp72.csv",    "Exp 72: RSI-8 (19.7)", ACCENT_CYAN, 0.7, '-'),
-        ("equity_curve_exp102.csv",   "Final (Sharpe 20.6)", ACCENT_GREEN, 1.0, '-'),
+        ("equity_curve_exp102.csv",   "Final Realistic (Sharpe 12.5)", ACCENT_GREEN, 1.0, '-'),
     ]
 
-    base = Path('/Users/jae_lee/auto-researchtrading')
+    base = Path('/Users/jasonanderson/auto-researchtrading')
     fig, (ax_pnl, ax_dd) = plt.subplots(2, 1, figsize=(14, 10), facecolor=BG,
                                          gridspec_kw={'height_ratios': [3, 1], 'hspace': 0.12})
 
@@ -879,7 +891,7 @@ def chart13_equity_evolution():
         spine.set_color(GRID_COLOR)
 
     # Annotation: arrow from baseline end to final end
-    ax_pnl.annotate('7.9x better\nrisk-adjusted',
+    ax_pnl.annotate('4.6x better\nrisk-adjusted',
                      xy=(timestamps[-1], pnl_pct[-1] if 'pnl_pct' in dir() else 0),
                      xytext=(-120, 30), textcoords='offset points',
                      fontsize=10, fontweight='bold', color=ACCENT_GREEN,

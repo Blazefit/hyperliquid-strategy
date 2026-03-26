@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exp108 — Hyperliquid Trader</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+  h1 { color: #fff; font-size: 24px; margin-bottom: 4px; }
+  .subtitle { color: #8b949e; font-size: 13px; margin-bottom: 24px; }
+  .mode-live { color: #f85149; font-weight: bold; }
+  .mode-paper { color: #d29922; font-weight: bold; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px; }
+  .card .label { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .card .value { color: #fff; font-size: 24px; font-weight: bold; margin-top: 4px; }
+  .card .value.green { color: #3fb950; }
+  .card .value.red { color: #f85149; }
+  .card .value.blue { color: #58a6ff; }
+  .card .value.yellow { color: #d29922; }
+
+  .chart-box { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+  .chart-box h2 { color: #fff; font-size: 15px; margin-bottom: 12px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 12px; border-bottom: 1px solid #21262d; }
+  td { padding: 8px 12px; border-bottom: 1px solid #161b22; }
+  tr:hover { background: #161b22; }
+  .pos-long { color: #3fb950; }
+  .pos-short { color: #f85149; }
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .status-running { background: #3fb950; }
+  .status-stopped { background: #f85149; }
+  .refresh-note { color: #484f58; font-size: 11px; text-align: right; margin-top: 8px; }
+
+  /* Control panel */
+  .controls { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px; margin-bottom: 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .controls h2 { color: #fff; font-size: 15px; margin-right: auto; }
+  .btn { padding: 8px 20px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: opacity 0.2s; }
+  .btn:hover { opacity: 0.85; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-start { background: #238636; color: #fff; }
+  .btn-stop { background: #da3633; color: #fff; }
+  .btn-mode { background: #21262d; color: #c9d1d9; border: 1px solid #363b42; }
+  .btn-mode.active { border-color: #58a6ff; color: #58a6ff; }
+  .btn-mode.live-active { border-color: #f85149; color: #f85149; }
+  .mode-select { display: flex; gap: 4px; }
+  .confirm-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 100; justify-content: center; align-items: center; }
+  .confirm-overlay.show { display: flex; }
+  .confirm-box { background: #161b22; border: 1px solid #f85149; border-radius: 10px; padding: 24px 32px; max-width: 420px; text-align: center; }
+  .confirm-box h3 { color: #f85149; margin-bottom: 12px; font-size: 18px; }
+  .confirm-box p { color: #8b949e; margin-bottom: 20px; font-size: 14px; line-height: 1.5; }
+  .confirm-box .btn-row { display: flex; gap: 12px; justify-content: center; }
+  .wallet-warning { color: #d29922; font-size: 12px; margin-left: 8px; }
+
+  /* Signal activity */
+  .action-entry { color: #3fb950; font-weight: bold; }
+  .action-exit { color: #f85149; font-weight: bold; }
+  .action-hold { color: #58a6ff; }
+  .action-skip { color: #484f58; }
+  .vote-bull { color: #3fb950; }
+  .vote-bear { color: #f85149; }
+  .vote-none { color: #30363d; }
+  .signal-reason { color: #c9d1d9; font-size: 12px; }
+  .signal-votes { font-family: monospace; font-size: 11px; }
+  .signal-detail { color: #8b949e; font-size: 11px; }
+  .tab-bar { display: flex; gap: 4px; margin-bottom: 12px; }
+  .tab-btn { padding: 4px 12px; border: 1px solid #21262d; border-radius: 4px; background: transparent; color: #8b949e; cursor: pointer; font-size: 12px; font-family: inherit; }
+  .tab-btn.active { background: #21262d; color: #fff; border-color: #363b42; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Exp108 Trader Dashboard</h1>
+  <div class="subtitle">
+    <span class="status-dot {{ 'status-running' if status == 'running' else 'status-stopped' }}"></span>
+    {{ status | upper }} —
+    <span class="{{ 'mode-live' if mode == 'LIVE' else 'mode-paper' }}">{{ mode }} MODE</span>
+    {% if last_run %} — Last run: {{ last_run }}{% endif %}
+  </div>
+
+  <!-- Control Panel -->
+  <div class="controls">
+    <h2>Controls</h2>
+
+    {% if trader_running %}
+      <form method="POST" action="/api/stop" style="display:inline;">
+        <button type="submit" class="btn btn-stop">Stop Trader</button>
+      </form>
+    {% else %}
+      <div class="mode-select">
+        <button class="btn btn-mode active" id="btn-paper" onclick="selectMode('paper')">Paper</button>
+        <button class="btn btn-mode" id="btn-live" onclick="selectMode('live')">Live</button>
+      </div>
+
+      <form method="POST" action="/api/start" id="startForm" style="display:inline;">
+        <input type="hidden" name="mode" id="modeInput" value="paper">
+        <button type="submit" class="btn btn-start" id="startBtn">Start Paper Trading</button>
+      </form>
+
+      {% if not has_wallet %}
+        <span class="wallet-warning">No wallet configured — Live mode unavailable until .env is set up</span>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="label">Equity (Live)</div>
+      <div class="value blue">${{ "%.2f"|format(hl_account.equity if hl_account else equity) }}</div>
+      {% if hl_account %}
+      <div style="color:#484f58;font-size:11px">Margin: ${{ "%.2f"|format(hl_account.margin_used) }} | Free: ${{ "%.2f"|format(hl_account.withdrawable) }}</div>
+      {% endif %}
+    </div>
+    <div class="card">
+      <div class="label">Open Positions (Live)</div>
+      <div class="value">{{ hl_positions|length if hl_positions else positions|length }}</div>
+    </div>
+    <div class="card">
+      <div class="label">P&L (Realized + Open)</div>
+      <div class="value {{ 'green' if total_pnl >= 0 else 'red' }}">
+        {{ "+" if total_pnl >= 0 else "" }}${{ "%.4f"|format(total_pnl) }}
+      </div>
+    </div>
+    <div class="card">
+      <div class="label">Total Trades</div>
+      <div class="value">{{ total_trades }}</div>
+    </div>
+    <div class="card">
+      <div class="label">Win Rate</div>
+      <div class="value {{ 'green' if win_rate >= 50 else 'red' }}">{{ "%.1f"|format(win_rate) }}%</div>
+    </div>
+    <div class="card">
+      <div class="label">Started</div>
+      <div class="value yellow" style="font-size:14px;">{{ started_at or 'N/A' }}</div>
+    </div>
+  </div>
+
+  <!-- Equity Chart -->
+  <div class="chart-box">
+    <h2>Equity Curve</h2>
+    <canvas id="equityChart" height="80"></canvas>
+  </div>
+
+  <!-- Open Position + Live Positions -->
+  <div class="chart-box">
+    <h2>Hyperliquid Trading</h2>
+
+    <div style="margin-bottom:16px; padding:16px; background:#161b22; border:1px solid #21262d; border-radius:8px;">
+      <strong style="color:#c9d1d9;">Open Position</strong>
+      <div style="display:flex; gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap;">
+        <select id="openCoin2" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:6px 10px;font-size:13px;">
+          <option value="BTC">BTC</option>
+          <option value="ETH">ETH</option>
+          <option value="SOL">SOL</option>
+        </select>
+        <select id="openSide2" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:6px 10px;font-size:13px;">
+          <option value="long">Long</option>
+          <option value="short">Short</option>
+        </select>
+        <div style="display:flex;align-items:center;gap:2px;">
+          <span style="color:#8b949e;font-size:13px;">$</span>
+          <input type="number" id="openSize2" value="11" min="11" step="1" style="width:70px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:6px 8px;font-size:13px;">
+        </div>
+        <button class="btn btn-start" style="padding:6px 16px;font-size:13px;" onclick="openPosition2()">Open</button>
+        <span id="orderStatus2" style="color:#8b949e;font-size:12px;"></span>
+      </div>
+    </div>
+
+    {% if hl_positions %}
+    <table>
+      <thead><tr><th>Coin</th><th>Side</th><th>Size</th><th>Notional</th><th>Entry</th><th>Current</th><th>P&L</th><th>P&L %</th><th>Liq. Price</th><th></th></tr></thead>
+      <tbody>
+      {% for p in hl_positions %}
+        <tr>
+          <td><strong>{{ p.coin }}</strong></td>
+          <td class="{{ 'pos-long' if p.side == 'LONG' else 'pos-short' }}">{{ p.side }}</td>
+          <td>{{ "%.4f"|format(p.size) }}</td>
+          <td>${{ "%.2f"|format(p.size_usd) }}</td>
+          <td>${{ "%.2f"|format(p.entry_price) }}</td>
+          <td>${{ "%.2f"|format(p.current_price) if p.current_price else '-' }}</td>
+          <td class="{{ 'pos-long' if p.unrealized_pnl >= 0 else 'pos-short' }}">
+            {{ "+" if p.unrealized_pnl >= 0 else "" }}${{ "%.4f"|format(p.unrealized_pnl) }}
+          </td>
+          <td class="{{ 'pos-long' if p.get('pnl_pct', 0) >= 0 else 'pos-short' }}">
+            {{ "%.2f"|format(p.get('pnl_pct', 0)) }}%
+          </td>
+          <td>{{ "$%.2f"|format(p.liquidation_px) if p.liquidation_px else 'N/A' }}</td>
+          <td>
+            <button class="btn btn-stop" style="padding:4px 10px;font-size:12px" onclick="closePosition('{{ p.coin }}')">Close</button>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:#484f58; padding: 12px 0;">No open positions</p>
+    {% endif %}
+  </div>
+
+  <!-- Signal Activity -->
+  <div class="chart-box">
+    <h2>Signal Activity</h2>
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="filterSignals('all', this)">All</button>
+      <button class="tab-btn" onclick="filterSignals('BTC', this)">BTC</button>
+      <button class="tab-btn" onclick="filterSignals('ETH', this)">ETH</button>
+      <button class="tab-btn" onclick="filterSignals('SOL', this)">SOL</button>
+      <button class="tab-btn" onclick="filterSignals('entries', this)">Trades Only</button>
+    </div>
+    {% if signal_log %}
+    <table id="signalTable">
+      <thead><tr><th>Time</th><th>Symbol</th><th>Price</th><th>Action</th><th>Reason</th><th>Votes</th><th>Indicators</th></tr></thead>
+      <tbody>
+      {% for s in signal_log %}
+        {% set d = s.details %}
+        <tr class="signal-row" data-symbol="{{ s.symbol }}" data-action="{{ s.action }}">
+          <td>{{ s.time_str }}</td>
+          <td><strong>{{ s.symbol }}</strong></td>
+          <td>${{ "%.2f"|format(s.price) }}</td>
+          <td class="{% if s.action.startswith('ENTRY') %}action-entry{% elif s.action.startswith('SIGNAL') %}action-hold{% elif 'EXIT' in s.action or 'STOP' in s.action %}action-exit{% elif 'HOLD' in s.action %}action-hold{% else %}action-skip{% endif %}">
+            {{ s.action }}
+          </td>
+          <td class="signal-reason">{{ s.reason }}</td>
+          <td class="signal-votes">
+            {% if d.votes %}
+              {% for name, val in d.votes.items() %}
+                <span class="{% if val == 'BULL' %}vote-bull{% elif val == 'BEAR' %}vote-bear{% else %}vote-none{% endif %}" title="{{ name }}">{{ val[0] if val != '-' else '·' }}</span>
+              {% endfor %}
+              <span class="signal-detail">({{ d.bull_votes|default(0) }}B/{{ d.bear_votes|default(0) }}S)</span>
+            {% endif %}
+          </td>
+          <td class="signal-detail">
+            RSI={{ d.rsi|default('-') }}
+            BB={{ d.bb_pctile|default('-') }}{% if d.bb_ok %}<span class="vote-bull">OK</span>{% else %}<span class="vote-bear">X</span>{% endif %}
+            {% if d.ret_short is defined %}Ret={{ d.ret_short }}%{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:#484f58; padding: 20px 0;">No signal data yet — will populate after the next hourly cycle</p>
+    {% endif %}
+  </div>
+
+  <!-- Recent Trades -->
+  <div class="chart-box">
+    <h2>Recent Trades</h2>
+    {% if trades %}
+    <table>
+      <thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Size</th><th>Price</th><th>P&L</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for t in trades %}
+        <tr>
+          <td>{{ t.time_str }}</td>
+          <td><strong>{{ t.symbol }}</strong></td>
+          <td class="{{ 'pos-long' if t.side == 'buy' else 'pos-short' }}">{{ t.side|upper }}</td>
+          <td>${{ "%.2f"|format(t.size_usd) }}</td>
+          <td>${{ "%.2f"|format(t.price) }}</td>
+          <td class="{{ 'pos-long' if t.pnl >= 0 else 'pos-short' }}">
+            {% if t.pnl != 0 %}{{ "+" if t.pnl >= 0 else "" }}${{ "%.2f"|format(t.pnl) }}{% else %}—{% endif %}
+          </td>
+          <td>{{ t.notes }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:#484f58; padding: 20px 0;">No trades yet</p>
+    {% endif %}
+  </div>
+
+  <div class="refresh-note">Auto-refreshes every 60s — <a href="/" style="color:#58a6ff;">Refresh now</a></div>
+</div>
+
+<!-- Live mode confirmation dialog -->
+<div class="confirm-overlay" id="liveConfirm">
+  <div class="confirm-box">
+    <h3>Switch to LIVE mode?</h3>
+    <p>This will trade with <strong>real money</strong> on Hyperliquid.<br>Make sure your wallet is funded and you understand the risks.</p>
+    <div class="btn-row">
+      <button class="btn btn-mode" onclick="cancelLive()">Cancel</button>
+      <button class="btn btn-stop" onclick="confirmLive()">Yes, go LIVE</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let selectedMode = 'paper';
+
+function selectMode(mode) {
+  if (mode === 'live') {
+    {% if not has_wallet %}
+      alert('No wallet configured. Add HL_PRIVATE_KEY to .env first.');
+      return;
+    {% endif %}
+    document.getElementById('liveConfirm').classList.add('show');
+    return;
+  }
+  applyMode('paper');
+}
+
+function confirmLive() {
+  document.getElementById('liveConfirm').classList.remove('show');
+  applyMode('live');
+}
+
+function cancelLive() {
+  document.getElementById('liveConfirm').classList.remove('show');
+}
+
+function applyMode(mode) {
+  selectedMode = mode;
+  document.getElementById('modeInput').value = mode;
+  const paperBtn = document.getElementById('btn-paper');
+  const liveBtn = document.getElementById('btn-live');
+  const startBtn = document.getElementById('startBtn');
+
+  if (mode === 'live') {
+    paperBtn.classList.remove('active');
+    liveBtn.classList.add('live-active');
+    startBtn.textContent = 'Start LIVE Trading';
+    startBtn.classList.remove('btn-start');
+    startBtn.classList.add('btn-stop');
+  } else {
+    liveBtn.classList.remove('live-active');
+    paperBtn.classList.add('active');
+    startBtn.textContent = 'Start Paper Trading';
+    startBtn.classList.remove('btn-stop');
+    startBtn.classList.add('btn-start');
+  }
+}
+
+// Equity chart
+const eqData = {{ equity_json | safe }};
+const ctx = document.getElementById('equityChart').getContext('2d');
+new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: eqData.map(d => d.time),
+    datasets: [{
+      label: 'Equity ($)',
+      data: eqData.map(d => d.equity),
+      borderColor: '#3fb950',
+      backgroundColor: 'rgba(63, 185, 80, 0.08)',
+      fill: true,
+      tension: 0.3,
+      pointRadius: 0,
+      borderWidth: 2,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: { mode: 'index', intersect: false }
+    },
+    scales: {
+      x: {
+        display: true,
+        ticks: { color: '#484f58', maxTicksLimit: 12, font: { size: 10 } },
+        grid: { color: '#21262d' }
+      },
+      y: {
+        display: true,
+        ticks: { color: '#484f58', callback: v => '$' + v.toLocaleString(), font: { size: 10 } },
+        grid: { color: '#21262d' }
+      }
+    }
+  }
+});
+
+function openPosition2() {
+  const coin = document.getElementById('openCoin2').value;
+  const side = document.getElementById('openSide2').value;
+  const size = document.getElementById('openSize2').value;
+  const status = document.getElementById('orderStatus2');
+  status.textContent = 'Sending order...';
+  status.style.color = '#e3b341';
+
+  const form = new FormData();
+  form.append('coin', coin);
+  form.append('side', side);
+  form.append('size_usd', size);
+
+  fetch('/api/open_position', { method: 'POST', body: form, headers: { 'Authorization': 'Basic ' + btoa('admin:Blaze6563!') } })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        status.textContent = 'Filled! ' + coin + ' ' + side + ' $' + size;
+        status.style.color = '#3fb950';
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        status.textContent = 'Error: ' + (data.error || 'Unknown');
+        status.style.color = '#f85149';
+      }
+    })
+    .catch(e => { status.textContent = 'Network error'; status.style.color = '#f85149'; });
+}
+
+function closePosition(coin) {
+  if (!confirm('Close ' + coin + ' position?')) return;
+  const status = document.getElementById('orderStatus');
+  status.textContent = 'Closing ' + coin + '...';
+  status.style.color = '#e3b341';
+
+  const form = new FormData();
+  form.append('coin', coin);
+
+  fetch('/api/close_position', { method: 'POST', body: form, headers: { 'Authorization': 'Basic ' + btoa('admin:Blaze6563!') } })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        status.textContent = coin + ' closed!';
+        status.style.color = '#3fb950';
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        status.textContent = 'Error: ' + (data.error || 'Unknown');
+        status.style.color = '#f85149';
+      }
+    })
+    .catch(e => { status.textContent = 'Network error'; status.style.color = '#f85149'; });
+}
+
+function filterSignals(filter, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.signal-row').forEach(row => {
+    if (filter === 'all') {
+      row.style.display = '';
+    } else if (filter === 'entries') {
+      const a = row.dataset.action;
+      row.style.display = (a === 'ENTRY_LONG' || a === 'ENTRY_SHORT' || a === 'EXIT' || a === 'ADJUST') ? '' : 'none';
+    } else {
+      row.style.display = row.dataset.symbol === filter ? '' : 'none';
+    }
+  });
+}
+
+setTimeout(() => location.reload(), 60000);
+</script>
+</body>
+</html>
