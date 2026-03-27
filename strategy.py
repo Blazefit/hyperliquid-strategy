@@ -36,15 +36,15 @@ MACD_SIGNAL = 9
 BB_PERIOD = 20
 
 # Position sizing
-BASE_POSITION_PCT = 0.15
+BASE_POSITION_PCT = 0.15  # Sub5000-K: 15% base (up from 8%)
 VOL_LOOKBACK = 48
 TARGET_VOL = 0.015
 BASE_THRESHOLD = 0.012
 
 # Risk management
 ATR_LOOKBACK = 24
-ATR_STOP_MULT = 4.0
-ATR_STOP_MULT_PROFIT = 3.0
+ATR_STOP_MULT = 4.0  # Sub5000-K: tighter stops (was 5.5)
+ATR_STOP_MULT_PROFIT = 3.0  # Sub5000-K: tightened profit stops (was 4.5)
 PROFIT_TIGHTEN_PCT = 0.03
 COOLDOWN_BARS = 3
 MIN_VOTES = 3  # out of 5 directional signals (majority rule)
