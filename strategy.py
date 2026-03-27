@@ -164,7 +164,7 @@ class Strategy:
 
         # Drawdown scaling
         self.peak_equity = max(self.peak_equity, equity)
-        current_dd = (self.peak_equity - equity) / self.peak_equity
+        current_dd = (self.peak_equity - equity) / self.peak_equity if self.peak_equity > 0 else 0.0
         dd_scale = 1.0
         if current_dd > DD_REDUCE_THRESHOLD:
             dd_scale = max(DD_REDUCE_FLOOR, 1.0 - (current_dd - DD_REDUCE_THRESHOLD) * 5)

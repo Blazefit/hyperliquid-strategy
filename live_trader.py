@@ -205,7 +205,10 @@ def get_account_state():
     try:
         state = info.user_state(WALLET_ADDRESS)
         margin = state.get("marginSummary", {})
-        equity = float(margin.get("accountValue", 100000))
+        equity = float(margin.get("accountValue", 0))
+        # Paper mode with no funds: use default equity
+        if equity == 0 and not LIVE_MODE:
+            equity = 100_000.0
 
         positions = {}
         for pos in state.get("assetPositions", []):
