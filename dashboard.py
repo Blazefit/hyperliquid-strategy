@@ -15,14 +15,10 @@ from pathlib import Path
 
 from flask import Flask, render_template, request, Response, redirect, url_for
 
-# Load .env (force-set so values always take effect)
-env_path = Path(__file__).parent / ".env"
-if env_path.exists():
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, v = line.split("=", 1)
-            os.environ[k.strip()] = v.strip()
+from hl_utils import close_sdk_sessions, count_open_fds, load_dotenv, SZ_DECIMALS
+
+# Load .env (force-set so dashboard always picks up .env values)
+load_dotenv(Path(__file__).parent / ".env", force=True)
 
 import db
 
@@ -322,8 +318,6 @@ def api_status():
     }
 
 
-SZ_DECIMALS = {"BTC": 5, "ETH": 4, "SOL": 2}
-
 @app.route("/api/open_position", methods=["POST"])
 @require_auth
 def api_open_position():
@@ -442,19 +436,13 @@ def api_export():
 
 @app.route("/health")
 def health():
-    fd_count = len(os.listdir(f"/dev/fd")) if os.path.isdir("/dev/fd") else -1
-    return {"ok": True, "open_fds": fd_count, "pid": os.getpid()}
+    return {"ok": True, "open_fds": count_open_fds(), "pid": os.getpid()}
 
 
 def _cleanup_sdk_sessions():
     """Close SDK HTTP sessions on shutdown to prevent leaked sockets."""
     global hl_info, hl_exchange
-    for client in (hl_info, hl_exchange):
-        if client and hasattr(client, "session"):
-            try:
-                client.session.close()
-            except Exception:
-                pass
+    close_sdk_sessions(hl_info, hl_exchange)
     hl_info = None
     hl_exchange = None
 

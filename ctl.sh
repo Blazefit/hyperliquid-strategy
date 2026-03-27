@@ -203,13 +203,33 @@ if trades:
     ;;
 
   stop-dashboard)
-    if [ -f "$DASH_PID_FILE" ]; then
-      PID=$(cat "$DASH_PID_FILE")
-      kill "$PID" 2>/dev/null
+    check_stale_pid "$DASH_PID_FILE" "dashboard"
+
+    if [ ! -f "$DASH_PID_FILE" ]; then
+      echo "Dashboard not running (no PID file)"
+      exit 1
+    fi
+
+    PID=$(cat "$DASH_PID_FILE")
+    if kill -0 "$PID" 2>/dev/null; then
+      echo "Stopping dashboard (PID $PID)..."
+      kill -TERM "$PID"
+      for i in $(seq 1 15); do
+        if ! kill -0 "$PID" 2>/dev/null; then
+          break
+        fi
+        sleep 1
+      done
+      if kill -0 "$PID" 2>/dev/null; then
+        echo "Force killing..."
+        kill -9 "$PID"
+        sleep 1
+      fi
       rm -f "$DASH_PID_FILE"
       echo "Dashboard stopped"
     else
-      echo "Dashboard not running"
+      echo "Dashboard not running (stale PID file)"
+      rm -f "$DASH_PID_FILE"
     fi
     ;;
 

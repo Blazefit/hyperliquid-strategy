@@ -25,14 +25,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# Load .env
-env_path = Path(__file__).parent / ".env"
-if env_path.exists():
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip())
+from hl_utils import close_sdk_sessions, count_open_fds, load_dotenv, SZ_DECIMALS
+
+# Load .env (setdefault — explicit env vars override .env)
+load_dotenv(Path(__file__).parent / ".env", force=False)
 
 from hyperliquid.info import Info
 from hyperliquid.exchange import Exchange
@@ -112,37 +108,23 @@ def refresh_sdk_sessions():
     """Close and recreate SDK HTTP sessions to prevent stale connection buildup.
     Called every 6 hours to keep the connection pool clean."""
     global info, exchange
-    # Close existing sessions
-    for client in (info, exchange):
-        if client and hasattr(client, "session"):
-            try:
-                client.session.close()
-            except Exception:
-                pass
-    # Reinitialize
+    close_sdk_sessions(info, exchange)
     init_clients()
     log.info("SDK sessions refreshed")
 
 
 def log_connection_health():
     """Log open file descriptor count for monitoring."""
-    try:
-        fd_count = len(os.listdir(f"/dev/fd"))
+    fd_count = count_open_fds()
+    if fd_count >= 0:
         log.info(f"Open file descriptors: {fd_count}")
         if fd_count > 200:
             log.warning(f"HIGH FD COUNT: {fd_count} — possible connection leak")
-    except Exception:
-        pass
 
 
 def _cleanup_on_exit():
     """Close SDK sessions on process exit."""
-    for client in (info, exchange):
-        if client and hasattr(client, "session"):
-            try:
-                client.session.close()
-            except Exception:
-                pass
+    close_sdk_sessions(info, exchange)
 
 
 atexit.register(_cleanup_on_exit)
@@ -253,8 +235,6 @@ def execute_order(symbol, target_usd, current_usd):
         else:
             log.info(f"  Skipping {symbol} order: ${abs(delta):.2f} below HL $10 minimum")
             return
-
-    SZ_DECIMALS = {"BTC": 5, "ETH": 4, "SOL": 2}
 
     mid = get_mid_price(symbol)
     if mid <= 0:
