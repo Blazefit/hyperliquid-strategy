@@ -55,6 +55,43 @@ MAX_POSITION_USD = 50_000
 MAX_PER_SYMBOL_PCT = 0.10
 MAX_TOTAL_EXPOSURE_PCT = 0.25
 
+OVERLAY_PATH = Path(__file__).parent / "risk_overlay.json"
+
+DEFAULT_OVERLAY = {
+    "position_scale": 1.0,
+    "pause_new_entries": False,
+    "tighten_stops": 1.0,
+}
+
+
+def load_risk_overlay(path=None):
+    """Read risk overlay from JSON file. Returns safe defaults on any error."""
+    path = path or OVERLAY_PATH
+    try:
+        if path.exists():
+            data = json.loads(path.read_text())
+            return {
+                "position_scale": max(0.25, min(1.0, float(data.get("position_scale", 1.0)))),
+                "pause_new_entries": bool(data.get("pause_new_entries", False)),
+                "tighten_stops": max(0.7, min(1.0, float(data.get("tighten_stops", 1.0)))),
+            }
+    except Exception as e:
+        log.warning(f"Failed to read risk overlay: {e} — using defaults")
+    return dict(DEFAULT_OVERLAY)
+
+
+def apply_overlay_to_target(target_usd, overlay, is_new_entry=False):
+    """Apply risk overlay to a position target.
+    - Exits (target=0) always pass through
+    - New entries blocked if pause_new_entries is True
+    - Position sizes scaled by position_scale
+    """
+    if target_usd == 0:
+        return 0.0
+    if overlay["pause_new_entries"] and is_new_entry:
+        return 0.0
+    return target_usd * overlay["position_scale"]
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -437,6 +474,20 @@ def run_cycle():
         log.warning("No bar data available, skipping cycle")
         return
 
+    # Load risk overlay once for this cycle
+    overlay = load_risk_overlay()
+    if overlay != DEFAULT_OVERLAY:
+        log.info(f"Risk overlay active: scale={overlay['position_scale']}, pause={overlay['pause_new_entries']}, stops={overlay['tighten_stops']}")
+
+    # Apply stop tightening from overlay
+    if overlay["tighten_stops"] < 1.0:
+        if not hasattr(strategy, '_original_atr_stop'):
+            strategy._original_atr_stop = getattr(strategy, 'ATR_STOP_MULT', 5.5)
+        strategy.ATR_STOP_MULT = strategy._original_atr_stop * overlay["tighten_stops"]
+        log.info(f"ATR stop tightened: {strategy._original_atr_stop} -> {strategy.ATR_STOP_MULT:.2f}")
+    elif hasattr(strategy, '_original_atr_stop'):
+        strategy.ATR_STOP_MULT = strategy._original_atr_stop
+
     log.info(f"Equity: ${equity:,.2f} | Positions: {live_positions}")
 
     # Run strategy
@@ -501,8 +552,17 @@ def run_cycle():
     else:
         for sig in signals:
             current = live_positions.get(sig.symbol, 0.0)
-            log.info(f"Signal: {sig.symbol} target=${sig.target_position:.0f} (current=${current:.0f})")
-            execute_order(sig.symbol, sig.target_position, current)
+            is_new_entry = current == 0 and sig.target_position != 0
+            adjusted_target = apply_overlay_to_target(sig.target_position, overlay, is_new_entry)
+
+            if adjusted_target != sig.target_position:
+                log.info(f"Overlay adjusted {sig.symbol}: ${sig.target_position:.0f} -> ${adjusted_target:.0f}")
+
+            if adjusted_target != current or sig.target_position == 0:
+                log.info(f"Signal: {sig.symbol} target=${adjusted_target:.0f} (current=${current:.0f})")
+                execute_order(sig.symbol, adjusted_target, current)
+            else:
+                log.info(f"Signal: {sig.symbol} target=${sig.target_position:.0f} -> blocked by overlay")
 
     # Update equity snapshot and refresh DB positions with current prices
     positions_dict = {}
