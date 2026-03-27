@@ -201,7 +201,7 @@ def index():
 
     positions = db.get_positions()
     trades_raw = db.get_recent_trades(50)
-    equity_hist = db.get_equity_history(2000)
+    all_trades = db.get_all_trades_chronological()
 
     status = "running" if is_trader_running() else "stopped"
     mode = db.get_state("mode", "PAPER")
@@ -214,35 +214,39 @@ def index():
         t["time_str"] = datetime.fromtimestamp(t["timestamp"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
         trades.append(t)
 
-    # Realized P&L from closed trades
-    realized_pnl = sum(t["pnl"] for t in trades_raw)
+    # Realized P&L — only from closed trades (non-zero pnl)
+    closed_trades = [t for t in all_trades if t["pnl"] != 0]
+    realized_pnl = sum(t["pnl"] for t in closed_trades)
 
     # Unrealized P&L from live Hyperliquid positions
     unrealized_pnl = sum(p.get("unrealized_pnl", 0) for p in (hl_positions or []))
 
     total_pnl = realized_pnl + unrealized_pnl
-    total_trades = len(trades_raw)
+    total_trades = len(all_trades)
 
-    # Win rate: count trades with pnl > 0 vs total closed trades
-    closed_trades = [t for t in trades_raw if t["pnl"] != 0]
+    # Win rate — ONLY closed trades with realized PnL
     wins = sum(1 for t in closed_trades if t["pnl"] > 0)
+    losses = sum(1 for t in closed_trades if t["pnl"] < 0)
+    win_rate = (wins / len(closed_trades) * 100) if closed_trades else 0.0
 
-    # If no closed trades yet but we have open positions, show unrealized win rate
-    if not closed_trades and hl_positions:
-        winning_positions = sum(1 for p in hl_positions if p.get("unrealized_pnl", 0) > 0)
-        win_rate = (winning_positions / len(hl_positions) * 100) if hl_positions else 0.0
-    elif closed_trades:
-        win_rate = (wins / len(closed_trades) * 100)
-    else:
-        win_rate = 0.0
+    # Additional stats
+    win_pnls = [t["pnl"] for t in closed_trades if t["pnl"] > 0]
+    loss_pnls = [t["pnl"] for t in closed_trades if t["pnl"] < 0]
+    avg_win = sum(win_pnls) / len(win_pnls) if win_pnls else 0.0
+    avg_loss = sum(loss_pnls) / len(loss_pnls) if loss_pnls else 0.0
+    profit_factor = abs(sum(win_pnls) / sum(loss_pnls)) if loss_pnls and sum(loss_pnls) != 0 else 0.0
 
-    equity_json = json.dumps([
-        {
-            "time": datetime.fromtimestamp(e["timestamp"], tz=timezone.utc).strftime("%m/%d %H:%M"),
-            "equity": round(e["equity"], 2),
-        }
-        for e in equity_hist
-    ])
+    # Cumulative realized PnL curve (from closed trades only — ignores deposits)
+    cum_pnl = 0.0
+    pnl_curve = []
+    for t in all_trades:
+        if t["pnl"] != 0:
+            cum_pnl += t["pnl"]
+            pnl_curve.append({
+                "time": datetime.fromtimestamp(t["timestamp"], tz=timezone.utc).strftime("%m/%d %H:%M"),
+                "pnl": round(cum_pnl, 4),
+            })
+    pnl_curve_json = json.dumps(pnl_curve)
 
     if last_run:
         try:
@@ -270,15 +274,23 @@ def index():
         "dashboard.html",
         positions=positions,
         trades=trades,
-        equity_json=equity_json,
+        pnl_curve_json=pnl_curve_json,
         status=status,
         mode=mode,
         equity=equity,
         last_run=last_run,
         started_at=started_at,
+        realized_pnl=realized_pnl,
+        unrealized_pnl=unrealized_pnl,
         total_pnl=total_pnl,
         total_trades=total_trades,
+        closed_trades_count=len(closed_trades),
+        wins=wins,
+        losses=losses,
         win_rate=win_rate,
+        avg_win=avg_win,
+        avg_loss=avg_loss,
+        profit_factor=profit_factor,
         trader_running=is_trader_running(),
         has_wallet=has_wallet,
         signal_log=signal_log,

@@ -110,40 +110,54 @@
 
   <div class="cards">
     <div class="card">
-      <div class="label">Equity (Live)</div>
+      <div class="label">Account Equity</div>
       <div class="value blue">${{ "%.2f"|format(hl_account.equity if hl_account else equity) }}</div>
       {% if hl_account %}
       <div style="color:#484f58;font-size:11px">Margin: ${{ "%.2f"|format(hl_account.margin_used) }} | Free: ${{ "%.2f"|format(hl_account.withdrawable) }}</div>
       {% endif %}
     </div>
     <div class="card">
-      <div class="label">Open Positions (Live)</div>
-      <div class="value">{{ hl_positions|length if hl_positions else positions|length }}</div>
+      <div class="label">Realized P&L</div>
+      <div class="value {{ 'green' if realized_pnl >= 0 else 'red' }}">
+        {{ "+" if realized_pnl >= 0 else "" }}${{ "%.4f"|format(realized_pnl) }}
+      </div>
+      <div style="color:#484f58;font-size:11px">{{ closed_trades_count }} closed trade{{ 's' if closed_trades_count != 1 }}</div>
     </div>
     <div class="card">
-      <div class="label">P&L (Realized + Open)</div>
-      <div class="value {{ 'green' if total_pnl >= 0 else 'red' }}">
-        {{ "+" if total_pnl >= 0 else "" }}${{ "%.4f"|format(total_pnl) }}
+      <div class="label">Unrealized P&L</div>
+      <div class="value {{ 'green' if unrealized_pnl >= 0 else 'red' }}">
+        {{ "+" if unrealized_pnl >= 0 else "" }}${{ "%.4f"|format(unrealized_pnl) }}
       </div>
+      <div style="color:#484f58;font-size:11px">{{ hl_positions|length if hl_positions else 0 }} open position{{ 's' if (hl_positions|length if hl_positions else 0) != 1 }}</div>
+    </div>
+    <div class="card">
+      <div class="label">Win Rate (Closed)</div>
+      <div class="value {{ 'green' if win_rate >= 50 else 'red' if closed_trades_count > 0 else '' }}">
+        {% if closed_trades_count > 0 %}{{ "%.1f"|format(win_rate) }}%{% else %}—{% endif %}
+      </div>
+      <div style="color:#484f58;font-size:11px">{{ wins }}W / {{ losses }}L</div>
+    </div>
+    <div class="card">
+      <div class="label">Avg Win / Loss</div>
+      <div class="value" style="font-size:16px;">
+        <span class="green">{{ "+$%.4f"|format(avg_win) if avg_win else '—' }}</span>
+        <span style="color:#484f58"> / </span>
+        <span class="red">{{ "$%.4f"|format(avg_loss) if avg_loss else '—' }}</span>
+      </div>
+      <div style="color:#484f58;font-size:11px">PF: {{ "%.2f"|format(profit_factor) if profit_factor else '—' }}</div>
     </div>
     <div class="card">
       <div class="label">Total Trades</div>
       <div class="value">{{ total_trades }}</div>
-    </div>
-    <div class="card">
-      <div class="label">Win Rate</div>
-      <div class="value {{ 'green' if win_rate >= 50 else 'red' }}">{{ "%.1f"|format(win_rate) }}%</div>
-    </div>
-    <div class="card">
-      <div class="label">Started</div>
-      <div class="value yellow" style="font-size:14px;">{{ started_at or 'N/A' }}</div>
+      <div style="color:#484f58;font-size:11px">Since {{ started_at or 'N/A' }}</div>
     </div>
   </div>
 
-  <!-- Equity Chart -->
+  <!-- Realized PnL Curve -->
   <div class="chart-box">
-    <h2>Equity Curve</h2>
-    <canvas id="equityChart" height="80"></canvas>
+    <h2>Cumulative Realized P&L</h2>
+    <canvas id="pnlChart" height="80"></canvas>
+    <div style="color:#484f58;font-size:11px;margin-top:8px;">Based on closed trades only — deposits and withdrawals do not affect this curve</div>
   </div>
 
   <!-- Open Position + Live Positions -->
@@ -336,44 +350,54 @@ function applyMode(mode) {
   }
 }
 
-// Equity chart
-const eqData = {{ equity_json | safe }};
-const ctx = document.getElementById('equityChart').getContext('2d');
-new Chart(ctx, {
-  type: 'line',
-  data: {
-    labels: eqData.map(d => d.time),
-    datasets: [{
-      label: 'Equity ($)',
-      data: eqData.map(d => d.equity),
-      borderColor: '#3fb950',
-      backgroundColor: 'rgba(63, 185, 80, 0.08)',
-      fill: true,
-      tension: 0.3,
-      pointRadius: 0,
-      borderWidth: 2,
-    }]
-  },
-  options: {
-    responsive: true,
-    plugins: {
-      legend: { display: false },
-      tooltip: { mode: 'index', intersect: false }
+// Cumulative Realized PnL chart
+const pnlData = {{ pnl_curve_json | safe }};
+const ctx = document.getElementById('pnlChart').getContext('2d');
+if (pnlData.length > 0) {
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: pnlData.map(d => d.time),
+      datasets: [{
+        label: 'Realized P&L ($)',
+        data: pnlData.map(d => d.pnl),
+        borderColor: pnlData[pnlData.length - 1].pnl >= 0 ? '#3fb950' : '#f85149',
+        backgroundColor: pnlData[pnlData.length - 1].pnl >= 0 ? 'rgba(63, 185, 80, 0.08)' : 'rgba(248, 81, 73, 0.08)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: pnlData.length < 30 ? 3 : 0,
+        borderWidth: 2,
+      }]
     },
-    scales: {
-      x: {
-        display: true,
-        ticks: { color: '#484f58', maxTicksLimit: 12, font: { size: 10 } },
-        grid: { color: '#21262d' }
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: 'index', intersect: false,
+          callbacks: { label: item => (item.raw >= 0 ? '+' : '') + '$' + item.raw.toFixed(4) }
+        }
       },
-      y: {
-        display: true,
-        ticks: { color: '#484f58', callback: v => '$' + v.toLocaleString(), font: { size: 10 } },
-        grid: { color: '#21262d' }
+      scales: {
+        x: {
+          display: true,
+          ticks: { color: '#484f58', maxTicksLimit: 12, font: { size: 10 } },
+          grid: { color: '#21262d' }
+        },
+        y: {
+          display: true,
+          ticks: { color: '#484f58', callback: v => (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(4), font: { size: 10 } },
+          grid: { color: '#21262d' }
+        }
       }
     }
-  }
-});
+  });
+} else {
+  ctx.font = '13px monospace';
+  ctx.fillStyle = '#484f58';
+  ctx.textAlign = 'center';
+  ctx.fillText('No closed trades yet \u2014 chart will appear after first position close', ctx.canvas.width / 2, 40);
+}
 
 function openPosition2() {
   const coin = document.getElementById('openCoin2').value;

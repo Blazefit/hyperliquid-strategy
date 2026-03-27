@@ -124,6 +124,16 @@ def get_recent_trades(limit=50):
     return [dict(r) for r in rows]
 
 
+def get_all_trades_chronological():
+    """Get all trades in chronological order for cumulative PnL curve."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM trades ORDER BY timestamp ASC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def get_equity_history(limit=2000):
     conn = get_conn()
     rows = conn.execute(
