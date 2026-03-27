@@ -1,4 +1,4 @@
-"""AI consensus orchestrator — Opus 4.6 + MiniMax M1 chain for risk overlay."""
+"""AI consensus orchestrator — Opus 4.6 + MiniMax M2.7 chain for risk overlay."""
 
 import os
 import sys
@@ -343,10 +343,19 @@ def parse_overlay_response(response_text):
     """Parse JSON from LLM response, handling ```json blocks. Clamp values to bounds."""
     text = response_text.strip()
 
+    # Strip <think> tags (MiniMax wraps responses in these)
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
     # Strip markdown code fences if present
     match = re.search(r"```(?:json)?\s*\n?(.*?)```", text, re.DOTALL)
     if match:
         text = match.group(1).strip()
+    else:
+        # Fallback: extract first JSON object from text
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            text = text[start:end + 1]
 
     data = json.loads(text)
 
@@ -400,7 +409,7 @@ def call_opus(prompt):
 
 
 def call_minimax(prompt):
-    """Call MiniMax API — M1 model."""
+    """Call MiniMax API — M2.7 model (OpenAI-compatible endpoint)."""
     import httpx
 
     api_key = os.environ.get("MINIMAX_API_KEY", "")
@@ -408,13 +417,13 @@ def call_minimax(prompt):
         raise RuntimeError("MINIMAX_API_KEY not set")
 
     resp = httpx.post(
-        "https://api.minimax.io/v1/text/chatcompletion_v2",
+        "https://api.minimax.io/v1/chat/completions",
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
         json={
-            "model": "MiniMax-M1",
+            "model": "MiniMax-M2.7",
             "max_tokens": 1024,
             "messages": [{"role": "user", "content": prompt}],
         },
@@ -438,7 +447,10 @@ def write_overlay(overlay_data):
         "market_assessment": overlay_data.get("market_assessment", ""),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    OVERLAY_PATH.write_text(json.dumps(output, indent=2))
+    # Atomic write: tmp file then replace, so live trader never reads partial JSON
+    tmp = OVERLAY_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(output, indent=2))
+    tmp.replace(OVERLAY_PATH)
     log.info(f"Wrote overlay: scale={output['position_scale']}, "
              f"pause={output['pause_new_entries']}, tighten={output['tighten_stops']}")
     return output
@@ -469,22 +481,36 @@ def run_consensus(dry_run=False):
     log.info("Gathering market data...")
     market_data = gather_market_data()
 
+    import httpx
+
     # Step 1: Opus analysis
     log.info("Calling Opus 4.6 for initial analysis...")
     analysis_prompt = build_opus_analysis_prompt(trading_data, market_data)
-    opus_analysis = call_opus(analysis_prompt)
+    try:
+        opus_analysis = call_opus(analysis_prompt)
+    except (httpx.HTTPError, httpx.TimeoutException, RuntimeError) as e:
+        log.error("Opus analysis call failed: %s", e)
+        return None
     log.info("Opus analysis received (%d chars)", len(opus_analysis))
 
     # Step 2: MiniMax review
-    log.info("Calling MiniMax M1 for contrarian review...")
+    log.info("Calling MiniMax M2.7 for contrarian review...")
     review_prompt = build_minimax_review_prompt(opus_analysis, trading_data)
-    minimax_review = call_minimax(review_prompt)
+    try:
+        minimax_review = call_minimax(review_prompt)
+    except (httpx.HTTPError, httpx.TimeoutException, RuntimeError) as e:
+        log.error("MiniMax review call failed: %s", e)
+        return None
     log.info("MiniMax review received (%d chars)", len(minimax_review))
 
     # Step 3: Opus final decision
     log.info("Calling Opus 4.6 for final decision...")
     final_prompt = build_opus_final_prompt(opus_analysis, minimax_review, trading_data)
-    opus_final = call_opus(final_prompt)
+    try:
+        opus_final = call_opus(final_prompt)
+    except (httpx.HTTPError, httpx.TimeoutException, RuntimeError) as e:
+        log.error("Opus final call failed: %s", e)
+        return None
     log.info("Opus final decision received (%d chars)", len(opus_final))
 
     # Parse the final response
