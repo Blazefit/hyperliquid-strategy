@@ -43,8 +43,8 @@ BASE_THRESHOLD = 0.012
 
 # Risk management
 ATR_LOOKBACK = 24
-ATR_STOP_MULT = 5.5
-ATR_STOP_MULT_PROFIT = 4.5
+ATR_STOP_MULT = 4.0
+ATR_STOP_MULT_PROFIT = 3.0
 PROFIT_TIGHTEN_PCT = 0.03
 COOLDOWN_BARS = 3
 MIN_VOTES = 3  # out of 5 directional signals (majority rule)
