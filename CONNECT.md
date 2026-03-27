@@ -2,8 +2,9 @@
 
 ## Dashboard Access
 
-- **URL**: `http://100.118.109.64:8181` (Tailscale)
-- **Auth**: Basic HTTP auth (credentials in `.env` on Mac Mini)
+- **Primary (daneelsbrain)**: `http://100.94.160.75:8181` (Tailscale, gunicorn)
+- **Fallback (Mac Mini)**: `http://100.118.109.64:8181` (Tailscale)
+- **Auth**: Basic HTTP auth (credentials in `.env`, disabled if not set)
 
 ## API Endpoints
 
@@ -32,15 +33,30 @@ Close a position. Form param: `coin`.
 Start/stop the trader. Start accepts form param `mode` (paper/live).
 
 ### GET /health
-No auth required. Returns `{"ok": true}`.
+No auth required. Returns `{"ok": true, "open_fds": N, "pid": N}`.
+Use `open_fds` to monitor for connection leaks — baseline is ~13, warn at >200.
 
 ## Example: Fetch Export Data
 
 ```bash
-curl -u "admin:PASSWORD" http://100.118.109.64:8181/api/export | jq .
+curl -u "admin:PASSWORD" http://100.94.160.75:8181/api/export | jq .
 ```
 
-## Mac Mini SSH Access
+## SSH Access
+
+### daneelsbrain (primary — Ubuntu 24.04, x86_64)
+
+```bash
+ssh daneelsbrain   # configured in ~/.ssh/config
+```
+
+- **Host**: 100.94.160.75 (Tailscale)
+- **User**: daneelbrain
+- **Project dir**: `~/auto-researchtrading/`
+- **Control script**: `./ctl.sh status|start|stop|dashboard|stop-dashboard|health|logs`
+- **Dashboard**: gunicorn (worker recycling, connection-safe)
+
+### Mac Mini (fallback)
 
 ```bash
 ssh daneel   # configured in ~/.ssh/config
@@ -49,9 +65,8 @@ ssh daneel   # configured in ~/.ssh/config
 - **Host**: 100.118.109.64 (Tailscale)
 - **User**: daneel
 - **Project dir**: `~/auto-researchtrading/`
-- **Control script**: `./ctl.sh status|start|stop|health|logs`
 
-## Key Files on Mac Mini
+## Key Files
 
 | File | Purpose |
 |------|---------|
