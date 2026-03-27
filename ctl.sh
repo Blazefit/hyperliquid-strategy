@@ -167,7 +167,7 @@ if trades:
       exit 1
     fi
 
-    echo "Starting dashboard on port $DASH_PORT ..."
+    echo "Starting dashboard on port $DASH_PORT (gunicorn) ..."
     echo "  Local:     http://localhost:$DASH_PORT"
 
     # Detect Tailscale IP
@@ -184,9 +184,22 @@ if trades:
     fi
 
     cd "$DIR"
-    nohup nice -n 10 "$VENV" dashboard.py >> "$DIR/dashboard.log" 2>&1 &
-    echo $! > "$DASH_PID_FILE"
-    echo "Dashboard started (PID $!)"
+    GUNICORN="$DIR/.venv/bin/gunicorn"
+    if [ -x "$GUNICORN" ]; then
+      # Production: gunicorn with connection-safe config
+      nohup nice -n 10 "$GUNICORN" -c gunicorn.conf.py dashboard:app >> "$DIR/dashboard.log" 2>&1 &
+      echo $! > "$DASH_PID_FILE"
+      echo "Dashboard started via gunicorn (PID $!)"
+      echo "  Worker recycling: every 1000 requests"
+      echo "  Keep-alive: 5s idle timeout"
+    else
+      # Fallback: Flask dev server (install gunicorn with: uv add gunicorn)
+      echo "  WARNING: gunicorn not found, falling back to Flask dev server"
+      echo "  Install with: uv add gunicorn"
+      nohup nice -n 10 "$VENV" dashboard.py >> "$DIR/dashboard.log" 2>&1 &
+      echo $! > "$DASH_PID_FILE"
+      echo "Dashboard started via Flask dev server (PID $!)"
+    fi
     ;;
 
   stop-dashboard)

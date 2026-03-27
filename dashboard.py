@@ -7,6 +7,7 @@ Includes start/stop and paper/live controls.
 import os
 import json
 import signal
+import atexit
 import functools
 import subprocess
 from datetime import datetime, timezone
@@ -162,14 +163,16 @@ def start_trader(live=False):
         env["HYPERLIQUID_LIVE"] = "1"
     else:
         env["HYPERLIQUID_LIVE"] = "0"
+    log_fh = open(PROJECT_DIR / "trader.log", "a")
     proc = subprocess.Popen(
         ["nice", "-n", "10", str(VENV_PYTHON), "live_trader.py"],
         cwd=str(PROJECT_DIR),
         env=env,
-        stdout=open(PROJECT_DIR / "trader.log", "a"),
+        stdout=log_fh,
         stderr=subprocess.STDOUT,
         start_new_session=True,
     )
+    log_fh.close()  # child process has its own fd copy
     PID_FILE.write_text(str(proc.pid))
     return True, f"Trader started (PID {proc.pid}, {'LIVE' if live else 'PAPER'})"
 
@@ -439,7 +442,24 @@ def api_export():
 
 @app.route("/health")
 def health():
-    return {"ok": True}
+    fd_count = len(os.listdir(f"/dev/fd")) if os.path.isdir("/dev/fd") else -1
+    return {"ok": True, "open_fds": fd_count, "pid": os.getpid()}
+
+
+def _cleanup_sdk_sessions():
+    """Close SDK HTTP sessions on shutdown to prevent leaked sockets."""
+    global hl_info, hl_exchange
+    for client in (hl_info, hl_exchange):
+        if client and hasattr(client, "session"):
+            try:
+                client.session.close()
+            except Exception:
+                pass
+    hl_info = None
+    hl_exchange = None
+
+
+atexit.register(_cleanup_sdk_sessions)
 
 
 if __name__ == "__main__":

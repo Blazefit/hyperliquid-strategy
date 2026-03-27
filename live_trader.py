@@ -15,6 +15,7 @@ import sys
 import time
 import json
 import signal
+import atexit
 import logging
 import traceback
 import resource
@@ -105,6 +106,46 @@ def init_clients():
     else:
         exchange = None
         log.info("PAPER MODE: No orders will be sent")
+
+
+def refresh_sdk_sessions():
+    """Close and recreate SDK HTTP sessions to prevent stale connection buildup.
+    Called every 6 hours to keep the connection pool clean."""
+    global info, exchange
+    # Close existing sessions
+    for client in (info, exchange):
+        if client and hasattr(client, "session"):
+            try:
+                client.session.close()
+            except Exception:
+                pass
+    # Reinitialize
+    init_clients()
+    log.info("SDK sessions refreshed")
+
+
+def log_connection_health():
+    """Log open file descriptor count for monitoring."""
+    try:
+        fd_count = len(os.listdir(f"/dev/fd"))
+        log.info(f"Open file descriptors: {fd_count}")
+        if fd_count > 200:
+            log.warning(f"HIGH FD COUNT: {fd_count} — possible connection leak")
+    except Exception:
+        pass
+
+
+def _cleanup_on_exit():
+    """Close SDK sessions on process exit."""
+    for client in (info, exchange):
+        if client and hasattr(client, "session"):
+            try:
+                client.session.close()
+            except Exception:
+                pass
+
+
+atexit.register(_cleanup_on_exit)
 
 
 def fetch_candles(symbol, lookback=LOOKBACK_BARS):
@@ -620,11 +661,18 @@ def main():
 
     try:
         # Run immediately on start, then wait for bar boundaries
+        cycle_count = 0
         run_cycle()
+        cycle_count += 1
         while running:
             wait_for_next_bar()
             if running:
+                # Refresh SDK sessions every 6 hours to prevent stale connections
+                if cycle_count > 0 and cycle_count % 6 == 0:
+                    refresh_sdk_sessions()
+                log_connection_health()
                 run_cycle()
+                cycle_count += 1
     except Exception as e:
         log.error(f"Fatal error: {e}\n{traceback.format_exc()}")
     finally:
