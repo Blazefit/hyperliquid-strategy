@@ -249,7 +249,7 @@ def log_consensus_proposal(proposal_type, title, reasoning, suggested_changes=No
 
 def get_consensus_proposals(status=None):
     conn = get_conn()
-    if status:
+    if status is not None:
         rows = conn.execute(
             "SELECT * FROM consensus_proposals WHERE status = ? ORDER BY timestamp DESC",
             (status,),
@@ -264,12 +264,14 @@ def get_consensus_proposals(status=None):
 
 def update_consensus_proposal(proposal_id, status):
     conn = get_conn()
-    conn.execute(
+    cur = conn.execute(
         "UPDATE consensus_proposals SET status = ? WHERE id = ?",
         (status, proposal_id),
     )
     conn.commit()
     conn.close()
+    if cur.rowcount == 0:
+        raise ValueError(f"No consensus proposal found with id={proposal_id}")
 
 
 init_db()
