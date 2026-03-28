@@ -10,9 +10,17 @@
   body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; }
   .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
   h1 { color: #fff; font-size: 24px; margin-bottom: 4px; }
-  .subtitle { color: #8b949e; font-size: 13px; margin-bottom: 24px; }
+  .subtitle { color: #8b949e; font-size: 13px; margin-bottom: 16px; }
   .mode-live { color: #f85149; font-weight: bold; }
   .mode-paper { color: #d29922; font-weight: bold; }
+
+  /* Page tabs */
+  .page-tabs { display: flex; gap: 0; margin-bottom: 24px; border-bottom: 1px solid #21262d; }
+  .page-tab { padding: 10px 20px; border: none; background: transparent; color: #8b949e; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit; border-bottom: 2px solid transparent; transition: all 0.2s; }
+  .page-tab:hover { color: #c9d1d9; }
+  .page-tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+  .page-content { display: none; }
+  .page-content.active { display: block; }
 
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
   .card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px; }
@@ -37,7 +45,6 @@
   .status-stopped { background: #f85149; }
   .refresh-note { color: #484f58; font-size: 11px; text-align: right; margin-top: 8px; }
 
-  /* Control panel */
   .controls { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px; margin-bottom: 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   .controls h2 { color: #fff; font-size: 15px; margin-right: auto; }
   .btn { padding: 8px 20px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: opacity 0.2s; }
@@ -57,7 +64,6 @@
   .confirm-box .btn-row { display: flex; gap: 12px; justify-content: center; }
   .wallet-warning { color: #d29922; font-size: 12px; margin-left: 8px; }
 
-  /* Signal activity */
   .action-entry { color: #3fb950; font-weight: bold; }
   .action-exit { color: #f85149; font-weight: bold; }
   .action-hold { color: #58a6ff; }
@@ -93,6 +99,22 @@
   .toggle-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background: #c9d1d9; border-radius: 50%; transition: 0.3s; }
   .toggle-switch input:checked + .toggle-slider { background: #238636; }
   .toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
+
+  /* AI Chat */
+  .chat-container { background: #161b22; border: 1px solid #21262d; border-radius: 8px; overflow: hidden; }
+  .chat-messages { height: 300px; overflow-y: auto; padding: 16px; }
+  .chat-msg { margin-bottom: 12px; }
+  .chat-msg.user { text-align: right; }
+  .chat-msg .bubble { display: inline-block; max-width: 80%; padding: 10px 14px; border-radius: 8px; font-size: 13px; line-height: 1.5; text-align: left; }
+  .chat-msg.user .bubble { background: #1f6feb; color: #fff; }
+  .chat-msg.ai .bubble { background: #21262d; color: #c9d1d9; }
+  .chat-msg .time { font-size: 10px; color: #484f58; margin-top: 2px; }
+  .chat-input { display: flex; border-top: 1px solid #21262d; }
+  .chat-input input { flex: 1; background: #0d1117; color: #c9d1d9; border: none; padding: 12px 16px; font-size: 13px; font-family: inherit; outline: none; }
+  .chat-input button { background: #238636; color: #fff; border: none; padding: 12px 20px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .chat-input button:hover { opacity: 0.85; }
+  .chat-input button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .chat-typing { color: #8b949e; font-size: 12px; padding: 4px 16px; font-style: italic; }
 </style>
 </head>
 <body>
@@ -105,266 +127,246 @@
     {% if last_run %} — Last run: {{ last_run }}{% endif %}
   </div>
 
-  <!-- Control Panel -->
-  <div class="controls">
-    <h2>Controls</h2>
-
-    {% if trader_running %}
-      <form method="POST" action="/api/stop" style="display:inline;">
-        <button type="submit" class="btn btn-stop">Stop Trader</button>
-      </form>
-    {% else %}
-      <div class="mode-select">
-        <button class="btn btn-mode active" id="btn-paper" onclick="selectMode('paper')">Paper</button>
-        <button class="btn btn-mode" id="btn-live" onclick="selectMode('live')">Live</button>
-      </div>
-
-      <form method="POST" action="/api/start" id="startForm" style="display:inline;">
-        <input type="hidden" name="mode" id="modeInput" value="paper">
-        <button type="submit" class="btn btn-start" id="startBtn">Start Paper Trading</button>
-      </form>
-
-      {% if not has_wallet %}
-        <span class="wallet-warning">No wallet configured — Live mode unavailable until .env is set up</span>
-      {% endif %}
-    {% endif %}
+  <!-- Page-Level Tabs -->
+  <div class="page-tabs">
+    <button class="page-tab active" onclick="switchPage('dashboard', this)">Dashboard</button>
+    <button class="page-tab" onclick="switchPage('trades', this)">Trade History</button>
+    <button class="page-tab" onclick="switchPage('signals', this)">Signal Log</button>
+    <button class="page-tab" onclick="switchPage('chat', this)">AI Chat</button>
   </div>
 
-  <div class="cards">
-    <div class="card">
-      <div class="label">Account Equity</div>
-      <div class="value blue">${{ "%.2f"|format(hl_account.equity if hl_account else equity) }}</div>
-      {% if hl_account %}
-      <div style="color:#484f58;font-size:11px">Margin: ${{ "%.2f"|format(hl_account.margin_used) }} | Free: ${{ "%.2f"|format(hl_account.withdrawable) }}</div>
+  <!-- ==================== DASHBOARD TAB ==================== -->
+  <div id="page-dashboard" class="page-content active">
+
+    <!-- Control Panel -->
+    <div class="controls">
+      <h2>Controls</h2>
+      {% if trader_running %}
+        <form method="POST" action="/api/stop" style="display:inline;">
+          <button type="submit" class="btn btn-stop">Stop Trader</button>
+        </form>
+      {% else %}
+        <div class="mode-select">
+          <button class="btn btn-mode active" id="btn-paper" onclick="selectMode('paper')">Paper</button>
+          <button class="btn btn-mode" id="btn-live" onclick="selectMode('live')">Live</button>
+        </div>
+        <form method="POST" action="/api/start" id="startForm" style="display:inline;">
+          <input type="hidden" name="mode" id="modeInput" value="paper">
+          <button type="submit" class="btn btn-start" id="startBtn">Start Paper Trading</button>
+        </form>
+        {% if not has_wallet %}
+          <span class="wallet-warning">No wallet configured — Live mode unavailable until .env is set up</span>
+        {% endif %}
       {% endif %}
     </div>
-    <div class="card">
-      <div class="label">Realized P&L</div>
-      <div class="value {{ 'green' if realized_pnl >= 0 else 'red' }}">
-        {{ "+" if realized_pnl >= 0 else "" }}${{ "%.4f"|format(realized_pnl) }}
-      </div>
-      <div style="color:#484f58;font-size:11px">{{ closed_trades_count }} closed trade{{ 's' if closed_trades_count != 1 }}</div>
-    </div>
-    <div class="card">
-      <div class="label">Unrealized P&L</div>
-      <div class="value {{ 'green' if unrealized_pnl >= 0 else 'red' }}">
-        {{ "+" if unrealized_pnl >= 0 else "" }}${{ "%.4f"|format(unrealized_pnl) }}
-      </div>
-      <div style="color:#484f58;font-size:11px">{{ hl_positions|length if hl_positions else 0 }} open position{{ 's' if (hl_positions|length if hl_positions else 0) != 1 }}</div>
-    </div>
-    <div class="card">
-      <div class="label">Win Rate (Closed)</div>
-      <div class="value {{ 'green' if win_rate >= 50 else 'red' if closed_trades_count > 0 else '' }}">
-        {% if closed_trades_count > 0 %}{{ "%.1f"|format(win_rate) }}%{% else %}—{% endif %}
-      </div>
-      <div style="color:#484f58;font-size:11px">{{ wins }}W / {{ losses }}L</div>
-    </div>
-    <div class="card">
-      <div class="label">Avg Win / Loss</div>
-      <div class="value" style="font-size:16px;">
-        <span class="green">{{ "+$%.4f"|format(avg_win) if avg_win else '—' }}</span>
-        <span style="color:#484f58"> / </span>
-        <span class="red">{{ "$%.4f"|format(avg_loss) if avg_loss else '—' }}</span>
-      </div>
-      <div style="color:#484f58;font-size:11px">PF: {{ "%.2f"|format(profit_factor) if profit_factor else '—' }}</div>
-    </div>
-    <div class="card">
-      <div class="label">Total Trades</div>
-      <div class="value">{{ total_trades }}</div>
-      <div style="color:#484f58;font-size:11px">Since {{ started_at or 'N/A' }}</div>
-    </div>
-  </div>
 
-  <!-- Realized PnL Curve -->
-  <div class="chart-box">
-    <h2>Cumulative Realized P&L</h2>
-    <canvas id="pnlChart" height="80"></canvas>
-    <div style="color:#484f58;font-size:11px;margin-top:8px;">Based on closed trades only — deposits and withdrawals do not affect this curve</div>
-  </div>
-
-  <!-- AI Consensus Risk Overlay -->
-  <div class="chart-box">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-      <h2>AI Consensus Risk Overlay</h2>
-      <div style="display:flex;align-items:center;gap:12px;">
-        <button class="btn btn-start" style="padding:4px 12px;font-size:12px;" onclick="runConsensus()">Run Now</button>
-        <label class="toggle-switch">
-          <input type="checkbox" id="consensusToggle" {{ 'checked' if consensus_enabled else '' }} onchange="toggleConsensus(this.checked)">
-          <span class="toggle-slider"></span>
-        </label>
-        <span style="color:#8b949e;font-size:12px;">{{ 'Enabled' if consensus_enabled else 'Disabled' }}</span>
+    <div class="cards">
+      <div class="card">
+        <div class="label">Account Equity</div>
+        <div class="value blue">${{ "%.2f"|format(hl_account.equity if hl_account else equity) }}</div>
+        {% if hl_account %}
+        <div style="color:#484f58;font-size:11px">Margin: ${{ "%.2f"|format(hl_account.margin_used) }} | Free: ${{ "%.2f"|format(hl_account.withdrawable) }}</div>
+        {% endif %}
+      </div>
+      <div class="card">
+        <div class="label">Realized P&L</div>
+        <div class="value {{ 'green' if realized_pnl >= 0 else 'red' }}">
+          {{ "+" if realized_pnl >= 0 else "" }}${{ "%.4f"|format(realized_pnl) }}
+        </div>
+        <div style="color:#484f58;font-size:11px">{{ closed_trades_count }} closed trade{{ 's' if closed_trades_count != 1 }}</div>
+      </div>
+      <div class="card">
+        <div class="label">Unrealized P&L</div>
+        <div class="value {{ 'green' if unrealized_pnl >= 0 else 'red' }}">
+          {{ "+" if unrealized_pnl >= 0 else "" }}${{ "%.4f"|format(unrealized_pnl) }}
+        </div>
+        <div style="color:#484f58;font-size:11px">{{ hl_positions|length if hl_positions else 0 }} open position{{ 's' if (hl_positions|length if hl_positions else 0) != 1 }}</div>
+      </div>
+      <div class="card">
+        <div class="label">Win Rate (Closed)</div>
+        <div class="value {{ 'green' if win_rate >= 50 else 'red' if closed_trades_count > 0 else '' }}">
+          {% if closed_trades_count > 0 %}{{ "%.1f"|format(win_rate) }}%{% else %}—{% endif %}
+        </div>
+        <div style="color:#484f58;font-size:11px">{{ wins }}W / {{ losses }}L</div>
+      </div>
+      <div class="card">
+        <div class="label">Avg Win / Loss</div>
+        <div class="value" style="font-size:16px;">
+          <span class="green">{{ "+$%.4f"|format(avg_win) if avg_win else '—' }}</span>
+          <span style="color:#484f58"> / </span>
+          <span class="red">{{ "$%.4f"|format(avg_loss) if avg_loss else '—' }}</span>
+        </div>
+        <div style="color:#484f58;font-size:11px">PF: {{ "%.2f"|format(profit_factor) if profit_factor else '—' }}</div>
+      </div>
+      <div class="card">
+        <div class="label">Total Trades</div>
+        <div class="value">{{ total_trades }}</div>
+        <div style="color:#484f58;font-size:11px">Since {{ started_at or 'N/A' }}</div>
       </div>
     </div>
 
-    {% if current_overlay %}
-    <div class="overlay-grid">
-      <div class="overlay-card">
-        <div class="ov-label">Position Scale</div>
-        <div class="ov-value {% if current_overlay.position_scale == 1.0 %}overlay-neutral{% elif current_overlay.position_scale >= 0.5 %}overlay-caution{% else %}overlay-warning{% endif %}">
-          {{ "%.0f"|format(current_overlay.position_scale * 100) }}%
+    <!-- PnL Curve -->
+    <div class="chart-box">
+      <h2>Cumulative Realized P&L</h2>
+      <canvas id="pnlChart" height="80"></canvas>
+      <div style="color:#484f58;font-size:11px;margin-top:8px;">Based on closed trades only</div>
+    </div>
+
+    <!-- AI Consensus Risk Overlay -->
+    <div class="chart-box">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h2>AI Consensus Risk Overlay</h2>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <button class="btn btn-start" style="padding:4px 12px;font-size:12px;" onclick="runConsensus()">Run Now</button>
+          <label class="toggle-switch">
+            <input type="checkbox" id="consensusToggle" {{ 'checked' if consensus_enabled else '' }} onchange="toggleConsensus(this.checked)">
+            <span class="toggle-slider"></span>
+          </label>
+          <span style="color:#8b949e;font-size:12px;">{{ 'Enabled' if consensus_enabled else 'Disabled' }}</span>
         </div>
       </div>
-      <div class="overlay-card">
-        <div class="ov-label">New Entries</div>
-        <div class="ov-value {% if current_overlay.pause_new_entries %}overlay-warning{% else %}overlay-neutral{% endif %}">
-          {{ 'PAUSED' if current_overlay.pause_new_entries else 'ACTIVE' }}
+
+      {% if current_overlay %}
+      <div class="overlay-grid">
+        <div class="overlay-card">
+          <div class="ov-label">Position Scale</div>
+          <div class="ov-value {% if current_overlay.position_scale == 1.0 %}overlay-neutral{% elif current_overlay.position_scale >= 0.5 %}overlay-caution{% else %}overlay-warning{% endif %}">
+            {{ "%.0f"|format(current_overlay.position_scale * 100) }}%
+          </div>
+        </div>
+        <div class="overlay-card">
+          <div class="ov-label">New Entries</div>
+          <div class="ov-value {% if current_overlay.pause_new_entries %}overlay-warning{% else %}overlay-neutral{% endif %}">
+            {{ 'PAUSED' if current_overlay.pause_new_entries else 'ACTIVE' }}
+          </div>
+        </div>
+        <div class="overlay-card">
+          <div class="ov-label">Stop Tightness</div>
+          <div class="ov-value {% if current_overlay.tighten_stops == 1.0 %}overlay-neutral{% elif current_overlay.tighten_stops >= 0.8 %}overlay-caution{% else %}overlay-warning{% endif %}">
+            {{ "%.0f"|format(current_overlay.tighten_stops * 100) }}%
+          </div>
         </div>
       </div>
-      <div class="overlay-card">
-        <div class="ov-label">Stop Tightness</div>
-        <div class="ov-value {% if current_overlay.tighten_stops == 1.0 %}overlay-neutral{% elif current_overlay.tighten_stops >= 0.8 %}overlay-caution{% else %}overlay-warning{% endif %}">
-          {{ "%.0f"|format(current_overlay.tighten_stops * 100) }}%
-        </div>
-      </div>
-    </div>
-
-    {% if current_overlay.reasoning %}
-    <div class="reasoning-box">
-      <div class="reasoning-label">Current Assessment</div>
-      {{ current_overlay.reasoning }}
-      {% if current_overlay.market_assessment %}
-      <div style="margin-top:8px;color:#8b949e;font-size:12px;">Market: {{ current_overlay.market_assessment }}</div>
-      {% endif %}
-      {% if current_overlay.updated_at %}
-      <div style="margin-top:8px;color:#484f58;font-size:11px;">Updated: {{ current_overlay.updated_at }}</div>
-      {% endif %}
-    </div>
-    {% endif %}
-
-    {% else %}
-    <div class="overlay-grid">
-      <div class="overlay-card">
-        <div class="ov-label">Position Scale</div>
-        <div class="ov-value overlay-neutral">100%</div>
-      </div>
-      <div class="overlay-card">
-        <div class="ov-label">New Entries</div>
-        <div class="ov-value overlay-neutral">ACTIVE</div>
-      </div>
-      <div class="overlay-card">
-        <div class="ov-label">Stop Tightness</div>
-        <div class="ov-value overlay-neutral">100%</div>
-      </div>
-    </div>
-    <div class="reasoning-box">
-      <div class="reasoning-label">Status</div>
-      No consensus has run yet — overlay defaults active (100% scale, entries active, normal stops)
-    </div>
-    {% endif %}
-
-    {% if pending_proposals %}
-    <h3 style="color:#d29922;font-size:14px;margin:16px 0 8px;">Pending Proposals</h3>
-    {% for p in pending_proposals %}
-    <div class="proposal-card">
-      <div class="proposal-title">{{ p.title }}</div>
-      <div style="color:#c9d1d9;font-size:13px;">{{ p.reasoning }}</div>
-      {% if p.suggested_changes %}
-      <div style="margin-top:8px;padding:10px;background:#161b22;border:1px solid #30363d;border-radius:4px;">
-        <div style="color:#8b949e;font-size:11px;text-transform:uppercase;margin-bottom:6px;">Suggested Changes</div>
-        {% for key, val in p.suggested_changes.items() %}
-        <div style="font-size:12px;color:#c9d1d9;padding:2px 0;">
-          <span style="color:#58a6ff;">{{ key }}</span>: <span style="color:#d29922;">{{ val }}</span>
-        </div>
-        {% endfor %}
+      {% if current_overlay.reasoning %}
+      <div class="reasoning-box">
+        <div class="reasoning-label">Current Assessment</div>
+        {{ current_overlay.reasoning }}
+        {% if current_overlay.market_assessment %}
+        <div style="margin-top:8px;color:#8b949e;font-size:12px;">Market: {{ current_overlay.market_assessment }}</div>
+        {% endif %}
+        {% if current_overlay.updated_at %}
+        <div style="margin-top:8px;color:#484f58;font-size:11px;">Updated: {{ current_overlay.updated_at }}</div>
+        {% endif %}
       </div>
       {% endif %}
-      <div style="color:#484f58;font-size:11px;margin-top:4px;">{{ p.time_str }}</div>
-      <div class="proposal-actions">
-        <button class="btn btn-start" style="padding:4px 14px;font-size:12px;" onclick="proposalAction({{ p.id }}, 'approved')">Approve</button>
-        <button class="btn btn-mode" style="padding:4px 14px;font-size:12px;" onclick="proposalAction({{ p.id }}, 'dismissed')">Dismiss</button>
+      {% else %}
+      <div class="overlay-grid">
+        <div class="overlay-card"><div class="ov-label">Position Scale</div><div class="ov-value overlay-neutral">100%</div></div>
+        <div class="overlay-card"><div class="ov-label">New Entries</div><div class="ov-value overlay-neutral">ACTIVE</div></div>
+        <div class="overlay-card"><div class="ov-label">Stop Tightness</div><div class="ov-value overlay-neutral">100%</div></div>
       </div>
-    </div>
-    {% endfor %}
-    {% endif %}
+      <div class="reasoning-box">
+        <div class="reasoning-label">Status</div>
+        No consensus has run yet — overlay defaults active (100% scale, entries active, normal stops)
+      </div>
+      {% endif %}
 
-    {% if consensus_log %}
-    <h3 style="color:#fff;font-size:14px;margin:16px 0 8px;">Recent Consensus Decisions</h3>
-    {% for entry in consensus_log %}
-    <div class="history-entry">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div class="history-date">{{ entry.time_str }}</div>
-        <div style="font-size:12px;">
-          Scale: <strong>{{ "%.0f"|format(entry.position_scale * 100) }}%</strong> |
-          Entries: <strong>{{ 'Paused' if entry.pause_new_entries else 'Active' }}</strong> |
-          Stops: <strong>{{ "%.0f"|format(entry.tighten_stops * 100) }}%</strong>
+      {% if pending_proposals %}
+      <h3 style="color:#d29922;font-size:14px;margin:16px 0 8px;">Pending Proposals</h3>
+      {% for p in pending_proposals %}
+      <div class="proposal-card">
+        <div class="proposal-title">{{ p.title }}</div>
+        <div style="color:#c9d1d9;font-size:13px;">{{ p.reasoning }}</div>
+        {% if p.suggested_changes %}
+        <div style="margin-top:8px;padding:10px;background:#161b22;border:1px solid #30363d;border-radius:4px;">
+          <div style="color:#8b949e;font-size:11px;text-transform:uppercase;margin-bottom:6px;">Suggested Changes</div>
+          {% for key, val in p.suggested_changes.items() %}
+          <div style="font-size:12px;color:#c9d1d9;padding:2px 0;">
+            <span style="color:#58a6ff;">{{ key }}</span>: <span style="color:#d29922;">{{ val }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <div style="color:#484f58;font-size:11px;margin-top:4px;">{{ p.time_str }}</div>
+        <div class="proposal-actions">
+          <button class="btn btn-start" style="padding:4px 14px;font-size:12px;" onclick="proposalAction({{ p.id }}, 'approved')">Approve</button>
+          <button class="btn btn-mode" style="padding:4px 14px;font-size:12px;" onclick="proposalAction({{ p.id }}, 'dismissed')">Dismiss</button>
         </div>
       </div>
-      <div style="color:#c9d1d9;font-size:13px;margin-top:6px;">{{ entry.reasoning }}</div>
-    </div>
-    {% endfor %}
-    {% endif %}
-  </div>
-
-  <!-- Open Position + Live Positions -->
-  <div class="chart-box">
-    <h2>Hyperliquid Trading</h2>
-
-    <div style="margin-bottom:16px; padding:16px; background:#161b22; border:1px solid #21262d; border-radius:8px;">
-      <strong style="color:#c9d1d9;">Open Position</strong>
-      <div style="display:flex; gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap;">
-        <select id="openCoin2" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:6px 10px;font-size:13px;">
-          <option value="BTC">BTC</option>
-          <option value="ETH">ETH</option>
-          <option value="SOL">SOL</option>
-        </select>
-        <select id="openSide2" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:6px 10px;font-size:13px;">
-          <option value="long">Long</option>
-          <option value="short">Short</option>
-        </select>
-        <div style="display:flex;align-items:center;gap:2px;">
-          <span style="color:#8b949e;font-size:13px;">$</span>
-          <input type="number" id="openSize2" value="11" min="11" step="1" style="width:70px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:6px 8px;font-size:13px;">
-        </div>
-        <button class="btn btn-start" style="padding:6px 16px;font-size:13px;" onclick="openPosition2()">Open</button>
-        <span id="orderStatus2" style="color:#8b949e;font-size:12px;"></span>
-      </div>
-    </div>
-
-    {% if hl_positions %}
-    <table>
-      <thead><tr><th>Coin</th><th>Side</th><th>Size</th><th>Notional</th><th>Entry</th><th>Current</th><th>P&L</th><th>P&L %</th><th>Liq. Price</th><th></th></tr></thead>
-      <tbody>
-      {% for p in hl_positions %}
-        <tr>
-          <td><strong>{{ p.coin }}</strong></td>
-          <td class="{{ 'pos-long' if p.side == 'LONG' else 'pos-short' }}">{{ p.side }}</td>
-          <td>{{ "%.4f"|format(p.size) }}</td>
-          <td>${{ "%.2f"|format(p.size_usd) }}</td>
-          <td>${{ "%.2f"|format(p.entry_price) }}</td>
-          <td>${{ "%.2f"|format(p.current_price) if p.current_price else '-' }}</td>
-          <td class="{{ 'pos-long' if p.unrealized_pnl >= 0 else 'pos-short' }}">
-            {{ "+" if p.unrealized_pnl >= 0 else "" }}${{ "%.4f"|format(p.unrealized_pnl) }}
-          </td>
-          <td class="{{ 'pos-long' if p.get('pnl_pct', 0) >= 0 else 'pos-short' }}">
-            {{ "%.2f"|format(p.get('pnl_pct', 0)) }}%
-          </td>
-          <td>{{ "$%.2f"|format(p.liquidation_px) if p.liquidation_px else 'N/A' }}</td>
-          <td>
-            <button class="btn btn-stop" style="padding:4px 10px;font-size:12px" onclick="closePosition('{{ p.coin }}')">Close</button>
-          </td>
-        </tr>
       {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p style="color:#484f58; padding: 12px 0;">No open positions</p>
-    {% endif %}
-  </div>
+      {% endif %}
 
-  <!-- Activity: Trades & Signals (tabbed) -->
-  <div class="chart-box">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-      <h2>Activity</h2>
-      <div class="tab-bar" style="margin-bottom:0;">
-        <button class="tab-btn active" onclick="switchActivityTab('trades', this)">Recent Trades</button>
-        <button class="tab-btn" onclick="switchActivityTab('signals', this)">Signals</button>
+      {% if consensus_log %}
+      <h3 style="color:#fff;font-size:14px;margin:16px 0 8px;">Recent Consensus Decisions</h3>
+      {% for entry in consensus_log %}
+      <div class="history-entry">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div class="history-date">{{ entry.time_str }}</div>
+          <div style="font-size:12px;">
+            Scale: <strong>{{ "%.0f"|format(entry.position_scale * 100) }}%</strong> |
+            Entries: <strong>{{ 'Paused' if entry.pause_new_entries else 'Active' }}</strong> |
+            Stops: <strong>{{ "%.0f"|format(entry.tighten_stops * 100) }}%</strong>
+          </div>
+        </div>
+        <div style="color:#c9d1d9;font-size:13px;margin-top:6px;">{{ entry.reasoning }}</div>
       </div>
+      {% endfor %}
+      {% endif %}
     </div>
 
-    <!-- Trades Tab -->
-    <div id="activityTrades">
+    <!-- Open Positions + Manual Trading -->
+    <div class="chart-box">
+      <h2>Hyperliquid Trading</h2>
+      <div style="margin-bottom:16px; padding:16px; background:#161b22; border:1px solid #21262d; border-radius:8px;">
+        <strong style="color:#c9d1d9;">Open Position</strong>
+        <div style="display:flex; gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap;">
+          <select id="openCoin2" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:6px 10px;font-size:13px;">
+            <option value="BTC">BTC</option><option value="ETH">ETH</option><option value="SOL">SOL</option>
+          </select>
+          <select id="openSide2" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:6px 10px;font-size:13px;">
+            <option value="long">Long</option><option value="short">Short</option>
+          </select>
+          <div style="display:flex;align-items:center;gap:2px;">
+            <span style="color:#8b949e;font-size:13px;">$</span>
+            <input type="number" id="openSize2" value="11" min="11" step="1" style="width:70px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:6px 8px;font-size:13px;">
+          </div>
+          <button class="btn btn-start" style="padding:6px 16px;font-size:13px;" onclick="openPosition2()">Open</button>
+          <span id="orderStatus2" style="color:#8b949e;font-size:12px;"></span>
+        </div>
+      </div>
+      {% if hl_positions %}
+      <table>
+        <thead><tr><th>Coin</th><th>Side</th><th>Size</th><th>Notional</th><th>Entry</th><th>Current</th><th>P&L</th><th>P&L %</th><th>Liq. Price</th><th></th></tr></thead>
+        <tbody>
+        {% for p in hl_positions %}
+          <tr>
+            <td><strong>{{ p.coin }}</strong></td>
+            <td class="{{ 'pos-long' if p.side == 'LONG' else 'pos-short' }}">{{ p.side }}</td>
+            <td>{{ "%.4f"|format(p.size) }}</td>
+            <td>${{ "%.2f"|format(p.size_usd) }}</td>
+            <td>${{ "%.2f"|format(p.entry_price) }}</td>
+            <td>${{ "%.2f"|format(p.current_price) if p.current_price else '-' }}</td>
+            <td class="{{ 'pos-long' if p.unrealized_pnl >= 0 else 'pos-short' }}">{{ "+" if p.unrealized_pnl >= 0 else "" }}${{ "%.4f"|format(p.unrealized_pnl) }}</td>
+            <td class="{{ 'pos-long' if p.get('pnl_pct', 0) >= 0 else 'pos-short' }}">{{ "%.2f"|format(p.get('pnl_pct', 0)) }}%</td>
+            <td>{{ "$%.2f"|format(p.liquidation_px) if p.liquidation_px else 'N/A' }}</td>
+            <td><button class="btn btn-stop" style="padding:4px 10px;font-size:12px" onclick="closePosition('{{ p.coin }}')">Close</button></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p style="color:#484f58; padding: 12px 0;">No open positions</p>
+      {% endif %}
+    </div>
+
+  </div><!-- end dashboard tab -->
+
+  <!-- ==================== TRADE HISTORY TAB ==================== -->
+  <div id="page-trades" class="page-content">
+    <div class="chart-box">
+      <h2>Trade History</h2>
       {% if trades %}
-      <div style="max-height:320px;overflow-y:auto;">
+      <div style="max-height:600px;overflow-y:auto;">
       <table>
         <thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Size</th><th>Price</th><th>P&L</th><th>Status</th></tr></thead>
         <tbody>
@@ -388,9 +390,12 @@
       <p style="color:#484f58; padding: 20px 0;">No trades yet</p>
       {% endif %}
     </div>
+  </div>
 
-    <!-- Signals Tab (hidden by default) -->
-    <div id="activitySignals" style="display:none;">
+  <!-- ==================== SIGNAL LOG TAB ==================== -->
+  <div id="page-signals" class="page-content">
+    <div class="chart-box">
+      <h2>Signal Log</h2>
       <div class="tab-bar">
         <button class="tab-btn active" onclick="filterSignals('all', this)">All</button>
         <button class="tab-btn" onclick="filterSignals('BTC', this)">BTC</button>
@@ -399,7 +404,7 @@
         <button class="tab-btn" onclick="filterSignals('entries', this)">Trades Only</button>
       </div>
       {% if signal_log %}
-      <div style="max-height:320px;overflow-y:auto;">
+      <div style="max-height:600px;overflow-y:auto;">
       <table id="signalTable">
         <thead><tr><th>Time</th><th>Symbol</th><th>Price</th><th>Action</th><th>Reason</th><th>Votes</th><th>Indicators</th></tr></thead>
         <tbody>
@@ -432,8 +437,30 @@
       </table>
       </div>
       {% else %}
-      <p style="color:#484f58; padding: 20px 0;">No signal data yet — will populate after the next hourly cycle</p>
+      <p style="color:#484f58; padding: 20px 0;">No signal data yet</p>
       {% endif %}
+    </div>
+  </div>
+
+  <!-- ==================== AI CHAT TAB ==================== -->
+  <div id="page-chat" class="page-content">
+    <div class="chart-box" style="padding:0;">
+      <div style="padding:16px 16px 8px;">
+        <h2>AI Assistant</h2>
+        <div style="color:#8b949e;font-size:12px;margin-top:4px;">Ask about trades, consensus decisions, strategy state, or positions</div>
+      </div>
+      <div class="chat-container">
+        <div class="chat-messages" id="chatMessages">
+          <div class="chat-msg ai">
+            <div class="bubble">What would you like to know about the trading system?</div>
+          </div>
+        </div>
+        <div id="chatTyping" class="chat-typing" style="display:none;">Thinking...</div>
+        <div class="chat-input">
+          <input type="text" id="chatInput" placeholder="Ask a question..." onkeydown="if(event.key==='Enter')sendChat()">
+          <button onclick="sendChat()" id="chatSendBtn">Send</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -453,209 +480,126 @@
 </div>
 
 <script>
-let selectedMode = 'paper';
+const AUTH = 'Basic ' + btoa('admin:Blaze6563!');
 
+// Page tab switching
+function switchPage(page, btn) {
+  document.querySelectorAll('.page-content').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  btn.classList.add('active');
+}
+
+// Trader controls
+let selectedMode = 'paper';
 function selectMode(mode) {
   if (mode === 'live') {
-    {% if not has_wallet %}
-      alert('No wallet configured. Add HL_PRIVATE_KEY to .env first.');
-      return;
-    {% endif %}
+    {% if not has_wallet %}alert('No wallet configured.'); return;{% endif %}
     document.getElementById('liveConfirm').classList.add('show');
     return;
   }
   applyMode('paper');
 }
-
-function confirmLive() {
-  document.getElementById('liveConfirm').classList.remove('show');
-  applyMode('live');
-}
-
-function cancelLive() {
-  document.getElementById('liveConfirm').classList.remove('show');
-}
-
+function confirmLive() { document.getElementById('liveConfirm').classList.remove('show'); applyMode('live'); }
+function cancelLive() { document.getElementById('liveConfirm').classList.remove('show'); }
 function applyMode(mode) {
   selectedMode = mode;
   document.getElementById('modeInput').value = mode;
-  const paperBtn = document.getElementById('btn-paper');
-  const liveBtn = document.getElementById('btn-live');
-  const startBtn = document.getElementById('startBtn');
-
-  if (mode === 'live') {
-    paperBtn.classList.remove('active');
-    liveBtn.classList.add('live-active');
-    startBtn.textContent = 'Start LIVE Trading';
-    startBtn.classList.remove('btn-start');
-    startBtn.classList.add('btn-stop');
-  } else {
-    liveBtn.classList.remove('live-active');
-    paperBtn.classList.add('active');
-    startBtn.textContent = 'Start Paper Trading';
-    startBtn.classList.remove('btn-stop');
-    startBtn.classList.add('btn-start');
-  }
+  const paperBtn = document.getElementById('btn-paper'), liveBtn = document.getElementById('btn-live'), startBtn = document.getElementById('startBtn');
+  if (mode === 'live') { paperBtn.classList.remove('active'); liveBtn.classList.add('live-active'); startBtn.textContent = 'Start LIVE Trading'; startBtn.classList.remove('btn-start'); startBtn.classList.add('btn-stop'); }
+  else { liveBtn.classList.remove('live-active'); paperBtn.classList.add('active'); startBtn.textContent = 'Start Paper Trading'; startBtn.classList.remove('btn-stop'); startBtn.classList.add('btn-start'); }
 }
 
-// Cumulative Realized PnL chart
+// PnL chart
 const pnlData = {{ pnl_curve_json | safe }};
 const ctx = document.getElementById('pnlChart').getContext('2d');
 if (pnlData.length > 0) {
   new Chart(ctx, {
     type: 'line',
-    data: {
-      labels: pnlData.map(d => d.time),
-      datasets: [{
-        label: 'Realized P&L ($)',
-        data: pnlData.map(d => d.pnl),
-        borderColor: pnlData[pnlData.length - 1].pnl >= 0 ? '#3fb950' : '#f85149',
-        backgroundColor: pnlData[pnlData.length - 1].pnl >= 0 ? 'rgba(63, 185, 80, 0.08)' : 'rgba(248, 81, 73, 0.08)',
-        fill: true,
-        tension: 0.3,
-        pointRadius: pnlData.length < 30 ? 3 : 0,
-        borderWidth: 2,
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          mode: 'index', intersect: false,
-          callbacks: { label: item => (item.raw >= 0 ? '+' : '') + '$' + item.raw.toFixed(4) }
-        }
-      },
-      scales: {
-        x: {
-          display: true,
-          ticks: { color: '#484f58', maxTicksLimit: 12, font: { size: 10 } },
-          grid: { color: '#21262d' }
-        },
-        y: {
-          display: true,
-          ticks: { color: '#484f58', callback: v => (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(4), font: { size: 10 } },
-          grid: { color: '#21262d' }
-        }
-      }
-    }
+    data: { labels: pnlData.map(d => d.time), datasets: [{ label: 'Realized P&L ($)', data: pnlData.map(d => d.pnl), borderColor: pnlData[pnlData.length-1].pnl >= 0 ? '#3fb950' : '#f85149', backgroundColor: pnlData[pnlData.length-1].pnl >= 0 ? 'rgba(63,185,80,0.08)' : 'rgba(248,81,73,0.08)', fill: true, tension: 0.3, pointRadius: pnlData.length < 30 ? 3 : 0, borderWidth: 2 }] },
+    options: { responsive: true, plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, callbacks: { label: item => (item.raw >= 0 ? '+' : '') + '$' + item.raw.toFixed(4) } } }, scales: { x: { display: true, ticks: { color: '#484f58', maxTicksLimit: 12, font: { size: 10 } }, grid: { color: '#21262d' } }, y: { display: true, ticks: { color: '#484f58', callback: v => (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(4), font: { size: 10 } }, grid: { color: '#21262d' } } } }
   });
-} else {
-  ctx.font = '13px monospace';
-  ctx.fillStyle = '#484f58';
-  ctx.textAlign = 'center';
-  ctx.fillText('No closed trades yet \u2014 chart will appear after first position close', ctx.canvas.width / 2, 40);
-}
+} else { ctx.font = '13px monospace'; ctx.fillStyle = '#484f58'; ctx.textAlign = 'center'; ctx.fillText('No closed trades yet', ctx.canvas.width / 2, 40); }
 
+// Trading actions
 function openPosition2() {
-  const coin = document.getElementById('openCoin2').value;
-  const side = document.getElementById('openSide2').value;
-  const size = document.getElementById('openSize2').value;
+  const coin = document.getElementById('openCoin2').value, side = document.getElementById('openSide2').value, size = document.getElementById('openSize2').value;
   const status = document.getElementById('orderStatus2');
-  status.textContent = 'Sending order...';
-  status.style.color = '#e3b341';
-
-  const form = new FormData();
-  form.append('coin', coin);
-  form.append('side', side);
-  form.append('size_usd', size);
-
-  fetch('/api/open_position', { method: 'POST', body: form, headers: { 'Authorization': 'Basic ' + btoa('admin:Blaze6563!') } })
-    .then(r => r.json())
-    .then(data => {
-      if (data.ok) {
-        status.textContent = 'Filled! ' + coin + ' ' + side + ' $' + size;
-        status.style.color = '#3fb950';
-        setTimeout(() => location.reload(), 1500);
-      } else {
-        status.textContent = 'Error: ' + (data.error || 'Unknown');
-        status.style.color = '#f85149';
-      }
-    })
+  status.textContent = 'Sending order...'; status.style.color = '#e3b341';
+  const form = new FormData(); form.append('coin', coin); form.append('side', side); form.append('size_usd', size);
+  fetch('/api/open_position', { method: 'POST', body: form, headers: { 'Authorization': AUTH } })
+    .then(r => r.json()).then(data => { if (data.ok) { status.textContent = 'Filled! ' + coin + ' ' + side + ' $' + size; status.style.color = '#3fb950'; setTimeout(() => location.reload(), 1500); } else { status.textContent = 'Error: ' + (data.error || 'Unknown'); status.style.color = '#f85149'; } })
     .catch(e => { status.textContent = 'Network error'; status.style.color = '#f85149'; });
 }
-
 function closePosition(coin) {
   if (!confirm('Close ' + coin + ' position?')) return;
-  const status = document.getElementById('orderStatus2');
-  status.textContent = 'Closing ' + coin + '...';
-  status.style.color = '#e3b341';
-
-  const form = new FormData();
-  form.append('coin', coin);
-
-  fetch('/api/close_position', { method: 'POST', body: form, headers: { 'Authorization': 'Basic ' + btoa('admin:Blaze6563!') } })
-    .then(r => r.json())
-    .then(data => {
-      if (data.ok) {
-        status.textContent = coin + ' closed!';
-        status.style.color = '#3fb950';
-        setTimeout(() => location.reload(), 1500);
-      } else {
-        status.textContent = 'Error: ' + (data.error || 'Unknown');
-        status.style.color = '#f85149';
-      }
-    })
+  const status = document.getElementById('orderStatus2'); status.textContent = 'Closing ' + coin + '...'; status.style.color = '#e3b341';
+  const form = new FormData(); form.append('coin', coin);
+  fetch('/api/close_position', { method: 'POST', body: form, headers: { 'Authorization': AUTH } })
+    .then(r => r.json()).then(data => { if (data.ok) { status.textContent = coin + ' closed!'; status.style.color = '#3fb950'; setTimeout(() => location.reload(), 1500); } else { status.textContent = 'Error: ' + (data.error || 'Unknown'); status.style.color = '#f85149'; } })
     .catch(e => { status.textContent = 'Network error'; status.style.color = '#f85149'; });
 }
 
+// Signal filtering
 function filterSignals(filter, btn) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   document.querySelectorAll('.signal-row').forEach(row => {
-    if (filter === 'all') {
-      row.style.display = '';
-    } else if (filter === 'entries') {
-      const a = row.dataset.action;
-      row.style.display = (a === 'ENTRY_LONG' || a === 'ENTRY_SHORT' || a === 'EXIT' || a === 'ADJUST') ? '' : 'none';
-    } else {
-      row.style.display = row.dataset.symbol === filter ? '' : 'none';
-    }
+    if (filter === 'all') row.style.display = '';
+    else if (filter === 'entries') { const a = row.dataset.action; row.style.display = (a === 'ENTRY_LONG' || a === 'ENTRY_SHORT' || a === 'EXIT' || a === 'ADJUST') ? '' : 'none'; }
+    else row.style.display = row.dataset.symbol === filter ? '' : 'none';
   });
 }
 
-function switchActivityTab(tab, btn) {
-  document.getElementById('activityTrades').style.display = tab === 'trades' ? '' : 'none';
-  document.getElementById('activitySignals').style.display = tab === 'signals' ? '' : 'none';
-  btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-}
-
+// Consensus controls
 function toggleConsensus(enabled) {
-  const form = new FormData();
-  form.append('enabled', enabled ? 'true' : 'false');
-  fetch('/api/consensus/toggle', { method: 'POST', body: form, headers: { 'Authorization': 'Basic ' + btoa('admin:Blaze6563!') } })
-    .then(r => r.json())
-    .then(data => { if (!data.ok) alert('Failed to toggle consensus'); });
+  const form = new FormData(); form.append('enabled', enabled ? 'true' : 'false');
+  fetch('/api/consensus/toggle', { method: 'POST', body: form, headers: { 'Authorization': AUTH } }).then(r => r.json()).then(data => { if (!data.ok) alert('Failed to toggle consensus'); });
 }
-
 function runConsensus() {
   if (!confirm('Run AI consensus now?')) return;
-  fetch('/api/consensus/run', { method: 'POST', headers: { 'Authorization': 'Basic ' + btoa('admin:Blaze6563!') } })
-    .then(r => r.json())
-    .then(data => {
-      if (data.ok) {
-        alert('Consensus started (PID ' + data.pid + '). Results will appear after analysis completes (~2 min).');
-        setTimeout(() => location.reload(), 120000);
-      } else {
-        alert('Failed: ' + (data.error || 'Unknown'));
-      }
-    })
-    .catch(e => alert('Network error'));
+  fetch('/api/consensus/run', { method: 'POST', headers: { 'Authorization': AUTH } }).then(r => r.json()).then(data => { if (data.ok) { alert('Consensus started. Results in ~2 min.'); setTimeout(() => location.reload(), 120000); } else alert('Failed: ' + (data.error || 'Unknown')); }).catch(e => alert('Network error'));
+}
+function proposalAction(id, action) {
+  if (!confirm((action === 'approved' ? 'Approve' : 'Dismiss') + ' this proposal?')) return;
+  const form = new FormData(); form.append('action', action);
+  fetch('/api/consensus/proposal/' + id, { method: 'POST', body: form, headers: { 'Authorization': AUTH } }).then(r => r.json()).then(data => { if (data.ok) location.reload(); else alert('Failed: ' + (data.error || 'Unknown')); }).catch(e => alert('Network error'));
 }
 
-function proposalAction(id, action) {
-  const label = action === 'approved' ? 'approve' : 'dismiss';
-  if (!confirm('Are you sure you want to ' + label + ' this proposal?')) return;
+// AI Chat
+function sendChat() {
+  const input = document.getElementById('chatInput');
+  const question = input.value.trim();
+  if (!question) return;
+  input.value = '';
+
+  const messages = document.getElementById('chatMessages');
+  messages.innerHTML += '<div class="chat-msg user"><div class="bubble">' + question.replace(/</g, '&lt;') + '</div></div>';
+  messages.scrollTop = messages.scrollHeight;
+
+  document.getElementById('chatTyping').style.display = '';
+  document.getElementById('chatSendBtn').disabled = true;
+
   const form = new FormData();
-  form.append('action', action);
-  fetch('/api/consensus/proposal/' + id, { method: 'POST', body: form, headers: { 'Authorization': 'Basic ' + btoa('admin:Blaze6563!') } })
+  form.append('question', question);
+  fetch('/api/chat', { method: 'POST', body: form, headers: { 'Authorization': AUTH } })
     .then(r => r.json())
     .then(data => {
-      if (data.ok) location.reload();
-      else alert('Failed: ' + (data.error || 'Unknown'));
+      document.getElementById('chatTyping').style.display = 'none';
+      document.getElementById('chatSendBtn').disabled = false;
+      if (data.ok) {
+        const answer = data.answer.replace(/</g, '&lt;').replace(/\n/g, '<br>');
+        messages.innerHTML += '<div class="chat-msg ai"><div class="bubble">' + answer + '</div></div>';
+      } else {
+        messages.innerHTML += '<div class="chat-msg ai"><div class="bubble" style="border:1px solid #f85149;">Error: ' + (data.error || 'Unknown') + '</div></div>';
+      }
+      messages.scrollTop = messages.scrollHeight;
     })
-    .catch(e => alert('Network error'));
+    .catch(e => {
+      document.getElementById('chatTyping').style.display = 'none';
+      document.getElementById('chatSendBtn').disabled = false;
+      messages.innerHTML += '<div class="chat-msg ai"><div class="bubble" style="border:1px solid #f85149;">Network error</div></div>';
+    });
 }
 
 setTimeout(() => location.reload(), 60000);

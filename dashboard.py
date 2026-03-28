@@ -541,6 +541,77 @@ def api_consensus_run():
         return {"ok": False, "error": str(e)}, 500
 
 
+@app.route("/api/chat", methods=["POST"])
+@require_auth
+def api_chat():
+    """AI chat — ask questions about trades, consensus, strategy state."""
+    import httpx
+
+    question = request.form.get("question", "").strip()
+    if not question:
+        return {"ok": False, "error": "No question provided"}, 400
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return {"ok": False, "error": "ANTHROPIC_API_KEY not set"}, 500
+
+    # Gather context for the AI
+    hl_account, hl_positions, _ = fetch_live_account()
+    recent_trades = db.get_recent_trades(20)
+    signal_log_raw = db.get_signal_log(20)
+    consensus_log = db.get_consensus_log(limit=3)
+    overlay = None
+    if OVERLAY_PATH.exists():
+        try:
+            overlay = json.loads(OVERLAY_PATH.read_text())
+        except Exception:
+            pass
+
+    context = f"""You are the AI assistant for the Exp19 Hyperliquid trading dashboard.
+Answer the user's question based on the current trading state below. Be concise and specific.
+
+## Current State
+Account equity: ${hl_account['equity'] if hl_account else 'N/A'}
+Mode: {db.get_state('mode', 'PAPER')}
+Open positions: {json.dumps([{{'coin': p['coin'], 'side': p['side'], 'size': p.get('size', 0), 'unrealized_pnl': p.get('unrealized_pnl', 0)}} for p in (hl_positions or [])], indent=2)}
+
+## Current Risk Overlay
+{json.dumps(overlay, indent=2) if overlay else 'No overlay active (defaults)'}
+
+## Recent Trades (last 20)
+{json.dumps([{{'time': t['timestamp'], 'symbol': t['symbol'], 'side': t['side'], 'size_usd': t['size_usd'], 'price': t['price'], 'pnl': t['pnl']}} for t in recent_trades[:10]], indent=2)}
+
+## Recent Signals (last 20)
+{json.dumps([{{'time': s['timestamp'], 'symbol': s['symbol'], 'action': s['action'], 'reason': s['reason']}} for s in signal_log_raw[:10]], indent=2)}
+
+## Recent Consensus Decisions
+{json.dumps([{{'reasoning': c['reasoning'], 'position_scale': c['position_scale'], 'tighten_stops': c['tighten_stops'], 'pause': c['pause_new_entries']}} for c in consensus_log], indent=2)}
+
+## User Question
+{question}"""
+
+    try:
+        resp = httpx.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-sonnet-4-6",
+                "max_tokens": 1024,
+                "messages": [{"role": "user", "content": context}],
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        answer = resp.json()["content"][0]["text"]
+        return {"ok": True, "answer": answer}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}, 500
+
+
 @app.route("/health")
 def health():
     return {"ok": True, "open_fds": count_open_fds(), "pid": os.getpid()}
