@@ -567,25 +567,34 @@ def api_chat():
         except Exception:
             pass
 
+    # Build context data outside f-string to avoid {{}} escaping issues
+    pos_data = json.dumps([dict(coin=p['coin'], side=p['side'], size=p.get('size', 0), unrealized_pnl=p.get('unrealized_pnl', 0)) for p in (hl_positions or [])], indent=2)
+    overlay_data = json.dumps(overlay, indent=2) if overlay else 'No overlay active (defaults)'
+    trades_data = json.dumps([dict(time=t['timestamp'], symbol=t['symbol'], side=t['side'], size_usd=t['size_usd'], price=t['price'], pnl=t['pnl']) for t in recent_trades[:10]], indent=2)
+    signals_data = json.dumps([dict(time=s['timestamp'], symbol=s['symbol'], action=s['action'], reason=s['reason']) for s in signal_log_raw[:10]], indent=2)
+    consensus_data = json.dumps([dict(reasoning=c['reasoning'], position_scale=c['position_scale'], tighten_stops=c['tighten_stops'], pause=c['pause_new_entries']) for c in consensus_log], indent=2)
+    equity_val = hl_account['equity'] if hl_account else 'N/A'
+    mode_val = db.get_state('mode', 'PAPER')
+
     context = f"""You are the AI assistant for the Exp19 Hyperliquid trading dashboard.
 Answer the user's question based on the current trading state below. Be concise and specific.
 
 ## Current State
-Account equity: ${hl_account['equity'] if hl_account else 'N/A'}
-Mode: {db.get_state('mode', 'PAPER')}
-Open positions: {json.dumps([{{'coin': p['coin'], 'side': p['side'], 'size': p.get('size', 0), 'unrealized_pnl': p.get('unrealized_pnl', 0)}} for p in (hl_positions or [])], indent=2)}
+Account equity: ${equity_val}
+Mode: {mode_val}
+Open positions: {pos_data}
 
 ## Current Risk Overlay
-{json.dumps(overlay, indent=2) if overlay else 'No overlay active (defaults)'}
+{overlay_data}
 
 ## Recent Trades (last 20)
-{json.dumps([{{'time': t['timestamp'], 'symbol': t['symbol'], 'side': t['side'], 'size_usd': t['size_usd'], 'price': t['price'], 'pnl': t['pnl']}} for t in recent_trades[:10]], indent=2)}
+{trades_data}
 
 ## Recent Signals (last 20)
-{json.dumps([{{'time': s['timestamp'], 'symbol': s['symbol'], 'action': s['action'], 'reason': s['reason']}} for s in signal_log_raw[:10]], indent=2)}
+{signals_data}
 
 ## Recent Consensus Decisions
-{json.dumps([{{'reasoning': c['reasoning'], 'position_scale': c['position_scale'], 'tighten_stops': c['tighten_stops'], 'pause': c['pause_new_entries']}} for c in consensus_log], indent=2)}
+{consensus_data}
 
 ## User Question
 {question}"""
