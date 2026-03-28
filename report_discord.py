@@ -141,7 +141,10 @@ def send_to_discord(message):
     req = urllib.request.Request(
         DISCORD_WEBHOOK,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "Exp19-TradingBot/1.0",
+        },
         method="POST",
     )
 
