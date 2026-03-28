@@ -520,7 +520,67 @@ def api_consensus_proposal_action(proposal_id):
         db.update_consensus_proposal(proposal_id, status=action)
     except ValueError as e:
         return {"ok": False, "error": str(e)}, 404
-    return {"ok": True, "proposal_id": proposal_id, "status": action}
+
+    changes_applied = []
+    if action == "approved":
+        # Get the proposal to check for overlay-applicable changes
+        all_proposals = db.get_consensus_proposals()
+        proposal = next((p for p in all_proposals if p["id"] == proposal_id), None)
+        if proposal:
+            suggested = json.loads(proposal.get("suggested_changes", "{}"))
+
+            # Check if overlay values should be updated
+            overlay_keys = {"position_scale", "tighten_stops", "pause_new_entries"}
+            overlay_changes = {k: v for k, v in suggested.items() if k in overlay_keys}
+
+            if overlay_changes:
+                # Read current overlay or defaults
+                current = {"position_scale": 1.0, "pause_new_entries": False, "tighten_stops": 1.0}
+                if OVERLAY_PATH.exists():
+                    try:
+                        current.update(json.loads(OVERLAY_PATH.read_text()))
+                    except Exception:
+                        pass
+
+                # Apply changes
+                for k, v in overlay_changes.items():
+                    old_val = current.get(k)
+                    if k == "position_scale":
+                        current[k] = max(0.25, min(1.0, float(v)))
+                    elif k == "tighten_stops":
+                        current[k] = max(0.7, min(1.0, float(v)))
+                    elif k == "pause_new_entries":
+                        current[k] = str(v).lower() in ("true", "1", "yes")
+                    changes_applied.append(f"{k}: {old_val} -> {current[k]}")
+
+                # Write updated overlay
+                from datetime import timezone as tz
+                current["reasoning"] = f"Manual approval: {proposal['title']}"
+                current["market_assessment"] = ""
+                current["updated_at"] = datetime.now(tz.utc).isoformat()
+                tmp = OVERLAY_PATH.with_suffix(".json.tmp")
+                tmp.write_text(json.dumps(current, indent=2))
+                tmp.replace(OVERLAY_PATH)
+
+            # Log as consensus entry so it shows in Recent Consensus Decisions
+            db.log_consensus(
+                position_scale=current.get("position_scale", 1.0) if overlay_changes else 1.0,
+                pause_new_entries=current.get("pause_new_entries", False) if overlay_changes else False,
+                tighten_stops=current.get("tighten_stops", 1.0) if overlay_changes else 1.0,
+                reasoning=f"Proposal #{proposal_id} approved: {proposal['title']}",
+                opus_analysis="",
+                minimax_review="",
+                opus_final="",
+                data_snapshot={"proposal_id": proposal_id, "changes": suggested},
+            )
+
+    return {
+        "ok": True,
+        "proposal_id": proposal_id,
+        "status": action,
+        "changes_applied": changes_applied,
+        "message": f"Proposal #{proposal_id} {action}" + (f". Applied: {', '.join(changes_applied)}" if changes_applied else ""),
+    }
 
 
 @app.route("/api/consensus/run", methods=["POST"])

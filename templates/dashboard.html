@@ -566,7 +566,22 @@ function runConsensus() {
 function proposalAction(id, action) {
   if (!confirm((action === 'approved' ? 'Approve' : 'Dismiss') + ' this proposal?')) return;
   const form = new FormData(); form.append('action', action);
-  fetch('/api/consensus/proposal/' + id, { method: 'POST', body: form, headers: { 'Authorization': AUTH } }).then(r => r.json()).then(data => { if (data.ok) location.reload(); else alert('Failed: ' + (data.error || 'Unknown')); }).catch(e => alert('Network error'));
+  fetch('/api/consensus/proposal/' + id, { method: 'POST', body: form, headers: { 'Authorization': AUTH } })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        let msg = data.message || ('Proposal #' + id + ' ' + action);
+        if (data.changes_applied && data.changes_applied.length > 0) {
+          msg += '\n\nOverlay changes applied:\n' + data.changes_applied.join('\n');
+          msg += '\n\nThe trader will use updated settings on its next cycle.';
+        }
+        alert(msg);
+        location.reload();
+      } else {
+        alert('Failed: ' + (data.error || 'Unknown'));
+      }
+    })
+    .catch(e => alert('Network error'));
 }
 
 // AI Chat
