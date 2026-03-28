@@ -582,7 +582,7 @@ function formatChatMessage(text) {
     const pChanges = changesMatch ? changesMatch[1].trim().replace(/'/g, "\\'") : '';
     html += '<div style="margin-top:10px;padding:10px;background:#161b22;border:1px solid #d29922;border-radius:4px;">';
     html += '<div style="color:#d29922;font-size:11px;text-transform:uppercase;margin-bottom:4px;">Proposed Change</div>';
-    html += '<button class="btn btn-start" style="padding:6px 16px;font-size:12px;margin-top:6px;" onclick="applyProposal(\'' + pTitle + '\', \'' + pReason + '\', \'' + pChanges + '\')">Create Proposal</button>';
+    html += '<button class="btn btn-start" style="padding:6px 16px;font-size:12px;margin-top:6px;" id="proposal-btn-' + pTitle.substring(0,20).replace(/[^a-zA-Z0-9]/g,'') + '" onclick="applyProposal(\'' + pTitle + '\', \'' + pReason + '\', \'' + pChanges + '\')">Create Proposal</button>';
     html += '</div>';
   }
   return html;
@@ -656,6 +656,7 @@ function applyProposal(title, reasoning, changes) {
   const btn = event.target;
   btn.disabled = true;
   btn.textContent = 'Creating...';
+  btn.style.opacity = '0.6';
 
   const form = new FormData();
   form.append('title', title);
@@ -665,18 +666,26 @@ function applyProposal(title, reasoning, changes) {
     .then(r => r.json())
     .then(data => {
       if (data.ok) {
-        btn.textContent = 'Proposal Created';
+        btn.textContent = 'Proposal #' + data.proposal_id + ' Created';
         btn.style.background = '#238636';
+        btn.style.opacity = '1';
+        btn.onclick = null;
         const messages = document.getElementById('chatMessages');
-        messages.innerHTML += '<div class="chat-msg ai"><div class="bubble" style="border:1px solid #3fb950;">Proposal #' + data.proposal_id + ' created: "' + data.title + '"<br><br>Go to the <strong>Dashboard</strong> tab to review and approve/dismiss.</div></div>';
+        messages.innerHTML += '<div class="chat-msg ai"><div class="bubble" style="border:1px solid #3fb950;">Proposal #' + data.proposal_id + ' created: "' + data.title + '"<br><br>Switch to the <strong>Dashboard</strong> tab to review and approve/dismiss it.</div></div>';
         messages.scrollTop = messages.scrollHeight;
       } else {
-        btn.textContent = 'Failed';
+        btn.textContent = 'Failed: ' + (data.error || 'Unknown');
         btn.style.background = '#da3633';
-        alert('Failed: ' + (data.error || 'Unknown'));
+        btn.disabled = false;
+        btn.style.opacity = '1';
       }
     })
-    .catch(e => { btn.textContent = 'Error'; btn.style.background = '#da3633'; });
+    .catch(e => {
+      btn.textContent = 'Network Error — Retry';
+      btn.style.background = '#da3633';
+      btn.disabled = false;
+      btn.style.opacity = '1';
+    });
 }
 
 // Load chat history on page load
