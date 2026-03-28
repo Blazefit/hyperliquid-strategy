@@ -476,7 +476,7 @@ def run_cycle():
 
     # Load risk overlay once for this cycle
     overlay = load_risk_overlay()
-    if overlay != DEFAULT_OVERLAY:
+    if overlay["position_scale"] != 1.0 or overlay["pause_new_entries"] or overlay["tighten_stops"] != 1.0:
         log.info(f"Risk overlay active: scale={overlay['position_scale']}, pause={overlay['pause_new_entries']}, stops={overlay['tighten_stops']}")
 
     # Apply stop tightening from overlay
