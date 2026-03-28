@@ -5,6 +5,7 @@ Includes start/stop and paper/live controls.
 """
 
 import os
+import sys
 import json
 import signal
 import atexit
@@ -108,6 +109,7 @@ def fetch_live_account():
 app = Flask(__name__)
 PROJECT_DIR = Path(__file__).parent
 PID_FILE = PROJECT_DIR / "trader.pid"
+OVERLAY_PATH = PROJECT_DIR / "risk_overlay.json"
 VENV_PYTHON = PROJECT_DIR / ".venv" / "bin" / "python"
 
 DASH_USER = os.environ.get("HL_DASH_USER", "")
@@ -200,7 +202,7 @@ def index():
     hl_account, hl_positions, hl_mids = fetch_live_account()
 
     positions = db.get_positions()
-    trades_raw = db.get_recent_trades(50)
+    trades_raw = db.get_recent_trades(10)
     all_trades = db.get_all_trades_chronological()
 
     status = "running" if is_trader_running() else "stopped"
@@ -270,6 +272,26 @@ def index():
         s["details"] = json.loads(s.get("details_json", "{}"))
         signal_log.append(s)
 
+    # AI Consensus data
+    consensus_log = db.get_consensus_log(limit=7)
+    for entry in consensus_log:
+        entry["data_snapshot"] = json.loads(entry.get("data_snapshot", "{}"))
+        entry["time_str"] = datetime.fromtimestamp(entry["timestamp"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    pending_proposals = db.get_consensus_proposals(status="pending")
+    for p in pending_proposals:
+        p["suggested_changes"] = json.loads(p.get("suggested_changes", "{}"))
+        p["time_str"] = datetime.fromtimestamp(p["timestamp"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    current_overlay = None
+    if OVERLAY_PATH.exists():
+        try:
+            current_overlay = json.loads(OVERLAY_PATH.read_text())
+        except Exception:
+            pass
+
+    consensus_enabled = db.get_state("consensus_enabled", True)
+
     return render_template(
         "dashboard.html",
         positions=positions,
@@ -296,6 +318,10 @@ def index():
         signal_log=signal_log,
         hl_account=hl_account,
         hl_positions=hl_positions,
+        consensus_log=consensus_log,
+        pending_proposals=pending_proposals,
+        current_overlay=current_overlay,
+        consensus_enabled=consensus_enabled,
     )
 
 
@@ -444,6 +470,70 @@ def api_export():
         "equity_history": equity_hist,
         "signal_log": signal_log,
     }
+
+
+@app.route("/api/consensus")
+@require_auth
+def api_consensus():
+    """Get consensus log and current overlay."""
+    consensus_log = db.get_consensus_log(limit=7)
+    proposals = db.get_consensus_proposals()
+
+    for entry in consensus_log:
+        entry["data_snapshot"] = json.loads(entry.get("data_snapshot", "{}"))
+
+    for p in proposals:
+        p["suggested_changes"] = json.loads(p.get("suggested_changes", "{}"))
+
+    overlay = None
+    if OVERLAY_PATH.exists():
+        try:
+            overlay = json.loads(OVERLAY_PATH.read_text())
+        except Exception:
+            pass
+
+    return {
+        "overlay": overlay,
+        "log": consensus_log,
+        "proposals": [p for p in proposals if p["status"] == "pending"],
+        "proposals_history": [p for p in proposals if p["status"] != "pending"],
+    }
+
+
+@app.route("/api/consensus/toggle", methods=["POST"])
+@require_auth
+def api_consensus_toggle():
+    """Enable/disable AI consensus."""
+    enabled = request.form.get("enabled", "true") == "true"
+    db.set_state("consensus_enabled", enabled)
+    return {"ok": True, "consensus_enabled": enabled}
+
+
+@app.route("/api/consensus/proposal/<int:proposal_id>", methods=["POST"])
+@require_auth
+def api_consensus_proposal_action(proposal_id):
+    """Approve or dismiss a proposal."""
+    action = request.form.get("action", "")
+    if action not in ("approved", "dismissed"):
+        return {"ok": False, "error": "action must be 'approved' or 'dismissed'"}, 400
+    db.update_consensus_proposal(proposal_id, status=action)
+    return {"ok": True, "proposal_id": proposal_id, "status": action}
+
+
+@app.route("/api/consensus/run", methods=["POST"])
+@require_auth
+def api_consensus_run():
+    """Trigger consensus run manually."""
+    try:
+        result = subprocess.Popen(
+            [sys.executable, "consensus.py"],
+            cwd=str(PROJECT_DIR),
+            stdout=open(PROJECT_DIR / "consensus.log", "a"),
+            stderr=subprocess.STDOUT,
+        )
+        return {"ok": True, "pid": result.pid}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}, 500
 
 
 @app.route("/health")
