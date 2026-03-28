@@ -127,6 +127,33 @@
     {% if last_run %} — Last run: {{ last_run }}{% endif %}
   </div>
 
+  <!-- Trading Status Banner -->
+  {% if current_overlay and current_overlay.pause_new_entries %}
+  <div style="background:#f8514920;border:1px solid #f85149;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+    <span style="font-size:20px;">&#9724;</span>
+    <div>
+      <div style="color:#f85149;font-weight:bold;font-size:14px;">Trading Status: PAUSED</div>
+      <div style="color:#c9d1d9;font-size:12px;">New entries blocked by AI consensus overlay. Position scale: {{ "%.0f"|format(current_overlay.position_scale * 100) }}%</div>
+    </div>
+  </div>
+  {% elif current_overlay and current_overlay.position_scale < 1.0 %}
+  <div style="background:#d2992220;border:1px solid #d29922;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+    <span style="font-size:20px;">&#9888;</span>
+    <div>
+      <div style="color:#d29922;font-weight:bold;font-size:14px;">Trading Status: REDUCED ({{ "%.0f"|format(current_overlay.position_scale * 100) }}% scale)</div>
+      <div style="color:#c9d1d9;font-size:12px;">Position sizes reduced by AI consensus. Stops: {{ "%.0f"|format(current_overlay.tighten_stops * 100) }}%</div>
+    </div>
+  </div>
+  {% else %}
+  <div style="background:#3fb95020;border:1px solid #3fb950;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+    <span style="font-size:20px;">&#9654;</span>
+    <div>
+      <div style="color:#3fb950;font-weight:bold;font-size:14px;">Trading Status: ACTIVE</div>
+      <div style="color:#c9d1d9;font-size:12px;">Full position sizing, normal stops, entries enabled</div>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Page-Level Tabs -->
   <div class="page-tabs">
     <button class="page-tab active" onclick="switchPage('dashboard', this)">Dashboard</button>
