@@ -516,7 +516,10 @@ def api_consensus_proposal_action(proposal_id):
     action = request.form.get("action", "")
     if action not in ("approved", "dismissed"):
         return {"ok": False, "error": "action must be 'approved' or 'dismissed'"}, 400
-    db.update_consensus_proposal(proposal_id, status=action)
+    try:
+        db.update_consensus_proposal(proposal_id, status=action)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}, 404
     return {"ok": True, "proposal_id": proposal_id, "status": action}
 
 
@@ -525,12 +528,14 @@ def api_consensus_proposal_action(proposal_id):
 def api_consensus_run():
     """Trigger consensus run manually."""
     try:
+        log_file = open(PROJECT_DIR / "consensus.log", "a")
         result = subprocess.Popen(
-            [sys.executable, "consensus.py"],
+            [str(VENV_PYTHON), "consensus.py"],
             cwd=str(PROJECT_DIR),
-            stdout=open(PROJECT_DIR / "consensus.log", "a"),
+            stdout=log_file,
             stderr=subprocess.STDOUT,
         )
+        log_file.close()
         return {"ok": True, "pid": result.pid}
     except Exception as e:
         return {"ok": False, "error": str(e)}, 500
