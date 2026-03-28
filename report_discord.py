@@ -35,8 +35,7 @@ PROJECT_DIR = Path(__file__).parent
 OVERLAY_PATH = PROJECT_DIR / "risk_overlay.json"
 PID_FILE = PROJECT_DIR / "trader.pid"
 
-DISCORD_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
-DISCORD_CHANNEL = os.environ.get("DISCORD_CHANNEL_ID", "1475854510806012067")
+DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
 
 def is_trader_running():
@@ -130,33 +129,29 @@ def build_report():
 
 
 def send_to_discord(message):
-    """Send message to Discord channel via bot token."""
+    """Send message to Discord via webhook."""
     import urllib.request
 
-    if not DISCORD_TOKEN:
-        print("ERROR: DISCORD_BOT_TOKEN not set")
+    if not DISCORD_WEBHOOK:
+        print("ERROR: DISCORD_WEBHOOK_URL not set in .env")
         return False
 
-    url = f"https://discord.com/api/v10/channels/{DISCORD_CHANNEL}/messages"
     data = json.dumps({"content": message}).encode("utf-8")
 
     req = urllib.request.Request(
-        url,
+        DISCORD_WEBHOOK,
         data=data,
-        headers={
-            "Authorization": f"Bot {DISCORD_TOKEN}",
-            "Content-Type": "application/json",
-        },
+        headers={"Content-Type": "application/json"},
         method="POST",
     )
 
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
-            if resp.status in (200, 201):
-                print(f"Report sent to Discord channel {DISCORD_CHANNEL}")
+            if resp.status in (200, 204):
+                print("Report sent to Discord")
                 return True
             else:
-                print(f"Discord API returned {resp.status}")
+                print(f"Discord webhook returned {resp.status}")
                 return False
     except Exception as e:
         print(f"Failed to send to Discord: {e}")
