@@ -634,6 +634,32 @@ Open positions: {pos_data}
         return {"ok": False, "error": str(e)}, 500
 
 
+@app.route("/api/chat/propose", methods=["POST"])
+@require_auth
+def api_chat_propose():
+    """Create a proposal from AI chat."""
+    title = request.form.get("title", "").strip()
+    reasoning = request.form.get("reasoning", "").strip()
+    changes = request.form.get("changes", "").strip()
+    if not title:
+        return {"ok": False, "error": "No title provided"}, 400
+
+    suggested = {}
+    if changes:
+        for part in changes.split(","):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                suggested[k.strip()] = v.strip()
+
+    prop_id = db.log_consensus_proposal(
+        proposal_type="chat_proposal",
+        title=title,
+        reasoning=reasoning or "Proposed via AI chat",
+        suggested_changes=suggested,
+    )
+    return {"ok": True, "proposal_id": prop_id, "title": title}
+
+
 @app.route("/api/chat/history")
 @require_auth
 def api_chat_history():
