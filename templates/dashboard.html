@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Exp108 — Hyperliquid Trader</title>
+<title>Exp19 — Hyperliquid Trader</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -71,11 +71,33 @@
   .tab-bar { display: flex; gap: 4px; margin-bottom: 12px; }
   .tab-btn { padding: 4px 12px; border: 1px solid #21262d; border-radius: 4px; background: transparent; color: #8b949e; cursor: pointer; font-size: 12px; font-family: inherit; }
   .tab-btn.active { background: #21262d; color: #fff; border-color: #363b42; }
+
+  /* AI Consensus */
+  .overlay-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0; }
+  .overlay-card { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 12px; text-align: center; }
+  .overlay-card .ov-label { font-size: 11px; color: #8b949e; text-transform: uppercase; }
+  .overlay-card .ov-value { font-size: 20px; font-weight: bold; margin-top: 4px; }
+  .overlay-neutral { color: #3fb950; }
+  .overlay-caution { color: #d29922; }
+  .overlay-warning { color: #f85149; }
+  .reasoning-box { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 14px; margin: 12px 0; font-size: 13px; line-height: 1.6; }
+  .reasoning-label { color: #8b949e; font-size: 11px; text-transform: uppercase; margin-bottom: 6px; }
+  .proposal-card { background: #0d1117; border: 1px solid #d29922; border-radius: 6px; padding: 14px; margin: 8px 0; }
+  .proposal-title { color: #d29922; font-weight: bold; margin-bottom: 6px; }
+  .proposal-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .history-entry { padding: 12px 0; border-bottom: 1px solid #21262d; }
+  .history-date { color: #8b949e; font-size: 12px; }
+  .toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #21262d; border-radius: 24px; transition: 0.3s; }
+  .toggle-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background: #c9d1d9; border-radius: 50%; transition: 0.3s; }
+  .toggle-switch input:checked + .toggle-slider { background: #238636; }
+  .toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>Exp108 Trader Dashboard</h1>
+  <h1>Exp19 Trader Dashboard</h1>
   <div class="subtitle">
     <span class="status-dot {{ 'status-running' if status == 'running' else 'status-stopped' }}"></span>
     {{ status | upper }} —
@@ -158,6 +180,109 @@
     <h2>Cumulative Realized P&L</h2>
     <canvas id="pnlChart" height="80"></canvas>
     <div style="color:#484f58;font-size:11px;margin-top:8px;">Based on closed trades only — deposits and withdrawals do not affect this curve</div>
+  </div>
+
+  <!-- AI Consensus Risk Overlay -->
+  <div class="chart-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h2>AI Consensus Risk Overlay</h2>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button class="btn btn-start" style="padding:4px 12px;font-size:12px;" onclick="runConsensus()">Run Now</button>
+        <label class="toggle-switch">
+          <input type="checkbox" id="consensusToggle" {{ 'checked' if consensus_enabled else '' }} onchange="toggleConsensus(this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+        <span style="color:#8b949e;font-size:12px;">{{ 'Enabled' if consensus_enabled else 'Disabled' }}</span>
+      </div>
+    </div>
+
+    {% if current_overlay %}
+    <div class="overlay-grid">
+      <div class="overlay-card">
+        <div class="ov-label">Position Scale</div>
+        <div class="ov-value {% if current_overlay.position_scale == 1.0 %}overlay-neutral{% elif current_overlay.position_scale >= 0.5 %}overlay-caution{% else %}overlay-warning{% endif %}">
+          {{ "%.0f"|format(current_overlay.position_scale * 100) }}%
+        </div>
+      </div>
+      <div class="overlay-card">
+        <div class="ov-label">New Entries</div>
+        <div class="ov-value {% if current_overlay.pause_new_entries %}overlay-warning{% else %}overlay-neutral{% endif %}">
+          {{ 'PAUSED' if current_overlay.pause_new_entries else 'ACTIVE' }}
+        </div>
+      </div>
+      <div class="overlay-card">
+        <div class="ov-label">Stop Tightness</div>
+        <div class="ov-value {% if current_overlay.tighten_stops == 1.0 %}overlay-neutral{% elif current_overlay.tighten_stops >= 0.8 %}overlay-caution{% else %}overlay-warning{% endif %}">
+          {{ "%.0f"|format(current_overlay.tighten_stops * 100) }}%
+        </div>
+      </div>
+    </div>
+
+    {% if current_overlay.reasoning %}
+    <div class="reasoning-box">
+      <div class="reasoning-label">Current Assessment</div>
+      {{ current_overlay.reasoning }}
+      {% if current_overlay.market_assessment %}
+      <div style="margin-top:8px;color:#8b949e;font-size:12px;">Market: {{ current_overlay.market_assessment }}</div>
+      {% endif %}
+      {% if current_overlay.updated_at %}
+      <div style="margin-top:8px;color:#484f58;font-size:11px;">Updated: {{ current_overlay.updated_at }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="overlay-grid">
+      <div class="overlay-card">
+        <div class="ov-label">Position Scale</div>
+        <div class="ov-value overlay-neutral">100%</div>
+      </div>
+      <div class="overlay-card">
+        <div class="ov-label">New Entries</div>
+        <div class="ov-value overlay-neutral">ACTIVE</div>
+      </div>
+      <div class="overlay-card">
+        <div class="ov-label">Stop Tightness</div>
+        <div class="ov-value overlay-neutral">100%</div>
+      </div>
+    </div>
+    <div class="reasoning-box">
+      <div class="reasoning-label">Status</div>
+      No consensus has run yet — overlay defaults active (100% scale, entries active, normal stops)
+    </div>
+    {% endif %}
+
+    {% if pending_proposals %}
+    <h3 style="color:#d29922;font-size:14px;margin:16px 0 8px;">Pending Proposals</h3>
+    {% for p in pending_proposals %}
+    <div class="proposal-card">
+      <div class="proposal-title">{{ p.title }}</div>
+      <div style="color:#c9d1d9;font-size:13px;">{{ p.reasoning }}</div>
+      <div style="color:#484f58;font-size:11px;margin-top:4px;">{{ p.time_str }}</div>
+      <div class="proposal-actions">
+        <button class="btn btn-start" style="padding:4px 14px;font-size:12px;" onclick="proposalAction({{ p.id }}, 'approved')">Approve</button>
+        <button class="btn btn-mode" style="padding:4px 14px;font-size:12px;" onclick="proposalAction({{ p.id }}, 'dismissed')">Dismiss</button>
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {% if consensus_log %}
+    <h3 style="color:#fff;font-size:14px;margin:16px 0 8px;">Recent Consensus Decisions</h3>
+    {% for entry in consensus_log %}
+    <div class="history-entry">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="history-date">{{ entry.time_str }}</div>
+        <div style="font-size:12px;">
+          Scale: <strong>{{ "%.0f"|format(entry.position_scale * 100) }}%</strong> |
+          Entries: <strong>{{ 'Paused' if entry.pause_new_entries else 'Active' }}</strong> |
+          Stops: <strong>{{ "%.0f"|format(entry.tighten_stops * 100) }}%</strong>
+        </div>
+      </div>
+      <div style="color:#c9d1d9;font-size:13px;margin-top:6px;">{{ entry.reasoning }}</div>
+    </div>
+    {% endfor %}
+    {% endif %}
   </div>
 
   <!-- Open Position + Live Positions -->
@@ -429,7 +554,7 @@ function openPosition2() {
 
 function closePosition(coin) {
   if (!confirm('Close ' + coin + ' position?')) return;
-  const status = document.getElementById('orderStatus');
+  const status = document.getElementById('orderStatus2');
   status.textContent = 'Closing ' + coin + '...';
   status.style.color = '#e3b341';
 
@@ -464,6 +589,43 @@ function filterSignals(filter, btn) {
       row.style.display = row.dataset.symbol === filter ? '' : 'none';
     }
   });
+}
+
+function toggleConsensus(enabled) {
+  const form = new FormData();
+  form.append('enabled', enabled ? 'true' : 'false');
+  fetch('/api/consensus/toggle', { method: 'POST', body: form, headers: { 'Authorization': 'Basic ' + btoa('admin:Blaze6563!') } })
+    .then(r => r.json())
+    .then(data => { if (!data.ok) alert('Failed to toggle consensus'); });
+}
+
+function runConsensus() {
+  if (!confirm('Run AI consensus now?')) return;
+  fetch('/api/consensus/run', { method: 'POST', headers: { 'Authorization': 'Basic ' + btoa('admin:Blaze6563!') } })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        alert('Consensus started (PID ' + data.pid + '). Results will appear after analysis completes (~2 min).');
+        setTimeout(() => location.reload(), 120000);
+      } else {
+        alert('Failed: ' + (data.error || 'Unknown'));
+      }
+    })
+    .catch(e => alert('Network error'));
+}
+
+function proposalAction(id, action) {
+  const label = action === 'approved' ? 'approve' : 'dismiss';
+  if (!confirm('Are you sure you want to ' + label + ' this proposal?')) return;
+  const form = new FormData();
+  form.append('action', action);
+  fetch('/api/consensus/proposal/' + id, { method: 'POST', body: form, headers: { 'Authorization': 'Basic ' + btoa('admin:Blaze6563!') } })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) location.reload();
+      else alert('Failed: ' + (data.error || 'Unknown'));
+    })
+    .catch(e => alert('Network error'));
 }
 
 setTimeout(() => location.reload(), 60000);
