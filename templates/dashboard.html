@@ -258,6 +258,16 @@
     <div class="proposal-card">
       <div class="proposal-title">{{ p.title }}</div>
       <div style="color:#c9d1d9;font-size:13px;">{{ p.reasoning }}</div>
+      {% if p.suggested_changes %}
+      <div style="margin-top:8px;padding:10px;background:#161b22;border:1px solid #30363d;border-radius:4px;">
+        <div style="color:#8b949e;font-size:11px;text-transform:uppercase;margin-bottom:6px;">Suggested Changes</div>
+        {% for key, val in p.suggested_changes.items() %}
+        <div style="font-size:12px;color:#c9d1d9;padding:2px 0;">
+          <span style="color:#58a6ff;">{{ key }}</span>: <span style="color:#d29922;">{{ val }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
       <div style="color:#484f58;font-size:11px;margin-top:4px;">{{ p.time_str }}</div>
       <div class="proposal-actions">
         <button class="btn btn-start" style="padding:4px 14px;font-size:12px;" onclick="proposalAction({{ p.id }}, 'approved')">Approve</button>
@@ -341,77 +351,90 @@
     {% endif %}
   </div>
 
-  <!-- Signal Activity -->
+  <!-- Activity: Trades & Signals (tabbed) -->
   <div class="chart-box">
-    <h2>Signal Activity</h2>
-    <div class="tab-bar">
-      <button class="tab-btn active" onclick="filterSignals('all', this)">All</button>
-      <button class="tab-btn" onclick="filterSignals('BTC', this)">BTC</button>
-      <button class="tab-btn" onclick="filterSignals('ETH', this)">ETH</button>
-      <button class="tab-btn" onclick="filterSignals('SOL', this)">SOL</button>
-      <button class="tab-btn" onclick="filterSignals('entries', this)">Trades Only</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h2>Activity</h2>
+      <div class="tab-bar" style="margin-bottom:0;">
+        <button class="tab-btn active" onclick="switchActivityTab('trades', this)">Recent Trades</button>
+        <button class="tab-btn" onclick="switchActivityTab('signals', this)">Signals</button>
+      </div>
     </div>
-    {% if signal_log %}
-    <table id="signalTable">
-      <thead><tr><th>Time</th><th>Symbol</th><th>Price</th><th>Action</th><th>Reason</th><th>Votes</th><th>Indicators</th></tr></thead>
-      <tbody>
-      {% for s in signal_log %}
-        {% set d = s.details %}
-        <tr class="signal-row" data-symbol="{{ s.symbol }}" data-action="{{ s.action }}">
-          <td>{{ s.time_str }}</td>
-          <td><strong>{{ s.symbol }}</strong></td>
-          <td>${{ "%.2f"|format(s.price) }}</td>
-          <td class="{% if s.action.startswith('ENTRY') %}action-entry{% elif s.action.startswith('SIGNAL') %}action-hold{% elif 'EXIT' in s.action or 'STOP' in s.action %}action-exit{% elif 'HOLD' in s.action %}action-hold{% else %}action-skip{% endif %}">
-            {{ s.action }}
-          </td>
-          <td class="signal-reason">{{ s.reason }}</td>
-          <td class="signal-votes">
-            {% if d.votes %}
-              {% for name, val in d.votes.items() %}
-                <span class="{% if val == 'BULL' %}vote-bull{% elif val == 'BEAR' %}vote-bear{% else %}vote-none{% endif %}" title="{{ name }}">{{ val[0] if val != '-' else '·' }}</span>
-              {% endfor %}
-              <span class="signal-detail">({{ d.bull_votes|default(0) }}B/{{ d.bear_votes|default(0) }}S)</span>
-            {% endif %}
-          </td>
-          <td class="signal-detail">
-            RSI={{ d.rsi|default('-') }}
-            BB={{ d.bb_pctile|default('-') }}{% if d.bb_ok %}<span class="vote-bull">OK</span>{% else %}<span class="vote-bear">X</span>{% endif %}
-            {% if d.ret_short is defined %}Ret={{ d.ret_short }}%{% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p style="color:#484f58; padding: 20px 0;">No signal data yet — will populate after the next hourly cycle</p>
-    {% endif %}
-  </div>
 
-  <!-- Recent Trades -->
-  <div class="chart-box">
-    <h2>Recent Trades</h2>
-    {% if trades %}
-    <table>
-      <thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Size</th><th>Price</th><th>P&L</th><th>Status</th></tr></thead>
-      <tbody>
-      {% for t in trades %}
-        <tr>
-          <td>{{ t.time_str }}</td>
-          <td><strong>{{ t.symbol }}</strong></td>
-          <td class="{{ 'pos-long' if t.side == 'buy' else 'pos-short' }}">{{ t.side|upper }}</td>
-          <td>${{ "%.2f"|format(t.size_usd) }}</td>
-          <td>${{ "%.2f"|format(t.price) }}</td>
-          <td class="{{ 'pos-long' if t.pnl >= 0 else 'pos-short' }}">
-            {% if t.pnl != 0 %}{{ "+" if t.pnl >= 0 else "" }}${{ "%.2f"|format(t.pnl) }}{% else %}—{% endif %}
-          </td>
-          <td>{{ t.notes }}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p style="color:#484f58; padding: 20px 0;">No trades yet</p>
-    {% endif %}
+    <!-- Trades Tab -->
+    <div id="activityTrades">
+      {% if trades %}
+      <div style="max-height:320px;overflow-y:auto;">
+      <table>
+        <thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Size</th><th>Price</th><th>P&L</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for t in trades %}
+          <tr>
+            <td>{{ t.time_str }}</td>
+            <td><strong>{{ t.symbol }}</strong></td>
+            <td class="{{ 'pos-long' if t.side == 'buy' else 'pos-short' }}">{{ t.side|upper }}</td>
+            <td>${{ "%.2f"|format(t.size_usd) }}</td>
+            <td>${{ "%.2f"|format(t.price) }}</td>
+            <td class="{{ 'pos-long' if t.pnl >= 0 else 'pos-short' }}">
+              {% if t.pnl != 0 %}{{ "+" if t.pnl >= 0 else "" }}${{ "%.2f"|format(t.pnl) }}{% else %}—{% endif %}
+            </td>
+            <td>{{ t.notes }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+      <p style="color:#484f58; padding: 20px 0;">No trades yet</p>
+      {% endif %}
+    </div>
+
+    <!-- Signals Tab (hidden by default) -->
+    <div id="activitySignals" style="display:none;">
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="filterSignals('all', this)">All</button>
+        <button class="tab-btn" onclick="filterSignals('BTC', this)">BTC</button>
+        <button class="tab-btn" onclick="filterSignals('ETH', this)">ETH</button>
+        <button class="tab-btn" onclick="filterSignals('SOL', this)">SOL</button>
+        <button class="tab-btn" onclick="filterSignals('entries', this)">Trades Only</button>
+      </div>
+      {% if signal_log %}
+      <div style="max-height:320px;overflow-y:auto;">
+      <table id="signalTable">
+        <thead><tr><th>Time</th><th>Symbol</th><th>Price</th><th>Action</th><th>Reason</th><th>Votes</th><th>Indicators</th></tr></thead>
+        <tbody>
+        {% for s in signal_log %}
+          {% set d = s.details %}
+          <tr class="signal-row" data-symbol="{{ s.symbol }}" data-action="{{ s.action }}">
+            <td>{{ s.time_str }}</td>
+            <td><strong>{{ s.symbol }}</strong></td>
+            <td>${{ "%.2f"|format(s.price) }}</td>
+            <td class="{% if s.action.startswith('ENTRY') %}action-entry{% elif s.action.startswith('SIGNAL') %}action-hold{% elif 'EXIT' in s.action or 'STOP' in s.action %}action-exit{% elif 'HOLD' in s.action %}action-hold{% else %}action-skip{% endif %}">
+              {{ s.action }}
+            </td>
+            <td class="signal-reason">{{ s.reason }}</td>
+            <td class="signal-votes">
+              {% if d.votes %}
+                {% for name, val in d.votes.items() %}
+                  <span class="{% if val == 'BULL' %}vote-bull{% elif val == 'BEAR' %}vote-bear{% else %}vote-none{% endif %}" title="{{ name }}">{{ val[0] if val != '-' else '·' }}</span>
+                {% endfor %}
+                <span class="signal-detail">({{ d.bull_votes|default(0) }}B/{{ d.bear_votes|default(0) }}S)</span>
+              {% endif %}
+            </td>
+            <td class="signal-detail">
+              RSI={{ d.rsi|default('-') }}
+              BB={{ d.bb_pctile|default('-') }}{% if d.bb_ok %}<span class="vote-bull">OK</span>{% else %}<span class="vote-bear">X</span>{% endif %}
+              {% if d.ret_short is defined %}Ret={{ d.ret_short }}%{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+      <p style="color:#484f58; padding: 20px 0;">No signal data yet — will populate after the next hourly cycle</p>
+      {% endif %}
+    </div>
   </div>
 
   <div class="refresh-note">Auto-refreshes every 60s — <a href="/" style="color:#58a6ff;">Refresh now</a></div>
@@ -589,6 +612,13 @@ function filterSignals(filter, btn) {
       row.style.display = row.dataset.symbol === filter ? '' : 'none';
     }
   });
+}
+
+function switchActivityTab(tab, btn) {
+  document.getElementById('activityTrades').style.display = tab === 'trades' ? '' : 'none';
+  document.getElementById('activitySignals').style.display = tab === 'signals' ? '' : 'none';
+  btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
 }
 
 function toggleConsensus(enabled) {
