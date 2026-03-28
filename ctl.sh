@@ -303,6 +303,18 @@ if trades:
     "$VENV" consensus.py --dry-run
     ;;
 
+  report)
+    echo "Sending Discord report..."
+    cd "$DIR"
+    "$VENV" report_discord.py "$@"
+    ;;
+
+  report-dry)
+    echo "Building report (dry run)..."
+    cd "$DIR"
+    "$VENV" report_discord.py --dry-run
+    ;;
+
   *)
     echo "Usage: $0 {start|stop|status|dashboard|stop-dashboard|health|logs|consensus|consensus-dry}"
     echo ""
@@ -315,6 +327,8 @@ if trades:
     echo "  logs           Tail the trader log"
     echo "  consensus      Run AI consensus risk overlay now"
     echo "  consensus-dry  Run AI consensus in dry-run mode (no changes)"
+    echo "  report         Send trading status to Discord"
+    echo "  report-dry     Preview report without sending"
     echo ""
     echo "Environment:"
     echo "  HYPERLIQUID_LIVE=1       Enable real trading"
