@@ -288,8 +288,23 @@ if trades:
     tail -f "$DIR/trader.log"
     ;;
 
+  consensus)
+    echo "Running AI consensus..."
+    if [ ! -f "$PID_FILE" ]; then
+        echo "WARNING: Trader is not running — consensus will skip"
+    fi
+    cd "$DIR"
+    "$VENV" consensus.py "$@"
+    ;;
+
+  consensus-dry)
+    echo "Running AI consensus (dry run)..."
+    cd "$DIR"
+    "$VENV" consensus.py --dry-run
+    ;;
+
   *)
-    echo "Usage: $0 {start|stop|status|dashboard|stop-dashboard|health|logs}"
+    echo "Usage: $0 {start|stop|status|dashboard|stop-dashboard|health|logs|consensus|consensus-dry}"
     echo ""
     echo "  start          Start the trader (paper mode by default)"
     echo "  stop           Stop the trader gracefully"
@@ -298,6 +313,8 @@ if trades:
     echo "  stop-dashboard Stop the web dashboard"
     echo "  health         System resource check (CPU, memory, disk, Tailscale)"
     echo "  logs           Tail the trader log"
+    echo "  consensus      Run AI consensus risk overlay now"
+    echo "  consensus-dry  Run AI consensus in dry-run mode (no changes)"
     echo ""
     echo "Environment:"
     echo "  HYPERLIQUID_LIVE=1       Enable real trading"
