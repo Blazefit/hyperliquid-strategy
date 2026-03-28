@@ -445,9 +445,12 @@
   <!-- ==================== AI CHAT TAB ==================== -->
   <div id="page-chat" class="page-content">
     <div class="chart-box" style="padding:0;">
-      <div style="padding:16px 16px 8px;">
-        <h2>AI Assistant</h2>
-        <div style="color:#8b949e;font-size:12px;margin-top:4px;">Ask about trades, consensus decisions, strategy state, or positions</div>
+      <div style="padding:16px 16px 8px;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h2>AI Assistant</h2>
+          <div style="color:#8b949e;font-size:12px;margin-top:4px;">Ask about trades, consensus, strategy — or propose changes</div>
+        </div>
+        <button class="btn btn-mode" style="padding:4px 12px;font-size:11px;" onclick="clearChat()">Clear History</button>
       </div>
       <div class="chat-container">
         <div class="chat-messages" id="chatMessages">
@@ -457,7 +460,7 @@
         </div>
         <div id="chatTyping" class="chat-typing" style="display:none;">Thinking...</div>
         <div class="chat-input">
-          <input type="text" id="chatInput" placeholder="Ask a question..." onkeydown="if(event.key==='Enter')sendChat()">
+          <input type="text" id="chatInput" placeholder="Ask a question or propose a change..." onkeydown="if(event.key==='Enter')sendChat()">
           <button onclick="sendChat()" id="chatSendBtn">Send</button>
         </div>
       </div>
@@ -567,6 +570,36 @@ function proposalAction(id, action) {
 }
 
 // AI Chat
+function formatChatMessage(text) {
+  let html = text.replace(/</g, '&lt;').replace(/\n/g, '<br>');
+  // Detect PROPOSAL blocks and add Apply button
+  const proposalMatch = text.match(/PROPOSAL:\s*(.+?)(?:\n|<br>)/);
+  if (proposalMatch) {
+    html += '<div style="margin-top:10px;padding:8px;background:#161b22;border:1px solid #d29922;border-radius:4px;">';
+    html += '<div style="color:#d29922;font-size:11px;text-transform:uppercase;margin-bottom:4px;">Proposed Change</div>';
+    html += '<button class="btn btn-start" style="padding:4px 14px;font-size:12px;margin-top:6px;" onclick="applyProposal(\'' + proposalMatch[1].replace(/'/g, "\\'") + '\')">Create Proposal</button>';
+    html += '</div>';
+  }
+  return html;
+}
+
+function loadChatHistory() {
+  fetch('/api/chat/history', { headers: { 'Authorization': AUTH } })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok && data.messages.length > 0) {
+        const messages = document.getElementById('chatMessages');
+        messages.innerHTML = '';
+        data.messages.forEach(m => {
+          const cls = m.role === 'user' ? 'user' : 'ai';
+          const content = formatChatMessage(m.message);
+          messages.innerHTML += '<div class="chat-msg ' + cls + '"><div class="bubble">' + content + '</div><div class="time">' + (m.time_str || '') + '</div></div>';
+        });
+        messages.scrollTop = messages.scrollHeight;
+      }
+    });
+}
+
 function sendChat() {
   const input = document.getElementById('chatInput');
   const question = input.value.trim();
@@ -588,7 +621,7 @@ function sendChat() {
       document.getElementById('chatTyping').style.display = 'none';
       document.getElementById('chatSendBtn').disabled = false;
       if (data.ok) {
-        const answer = data.answer.replace(/</g, '&lt;').replace(/\n/g, '<br>');
+        const answer = formatChatMessage(data.answer);
         messages.innerHTML += '<div class="chat-msg ai"><div class="bubble">' + answer + '</div></div>';
       } else {
         messages.innerHTML += '<div class="chat-msg ai"><div class="bubble" style="border:1px solid #f85149;">Error: ' + (data.error || 'Unknown') + '</div></div>';
@@ -601,6 +634,29 @@ function sendChat() {
       messages.innerHTML += '<div class="chat-msg ai"><div class="bubble" style="border:1px solid #f85149;">Network error</div></div>';
     });
 }
+
+function clearChat() {
+  if (!confirm('Clear all chat history?')) return;
+  fetch('/api/chat/clear', { method: 'POST', headers: { 'Authorization': AUTH } })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        document.getElementById('chatMessages').innerHTML = '<div class="chat-msg ai"><div class="bubble">Chat cleared. What would you like to know?</div></div>';
+      }
+    });
+}
+
+function applyProposal(title) {
+  if (!confirm('Create proposal: ' + title + '?')) return;
+  const form = new FormData();
+  form.append('question', 'Please create a formal proposal for: ' + title + '. Format it with PROPOSAL:, CHANGES:, and REASON: fields.');
+  fetch('/api/chat', { method: 'POST', body: form, headers: { 'Authorization': AUTH } })
+    .then(r => r.json())
+    .then(data => { alert('Proposal logged. Check the Dashboard tab for pending proposals.'); });
+}
+
+// Load chat history on page load
+loadChatHistory();
 
 setTimeout(() => location.reload(), 60000);
 </script>

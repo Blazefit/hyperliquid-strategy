@@ -596,8 +596,19 @@ Open positions: {pos_data}
 ## Recent Consensus Decisions
 {consensus_data}
 
+## Instructions
+- If the user asks you to change something (overlay, parameters, strategy), format a proposal as:
+  PROPOSAL: {{title}}
+  CHANGES: {{key=value, key=value}}
+  REASON: {{why}}
+  The dashboard will show an "Apply" button for proposals.
+- Be concise and direct.
+
 ## User Question
 {question}"""
+
+    # Save user message
+    db.log_chat_message("user", question)
 
     try:
         resp = httpx.post(
@@ -616,9 +627,29 @@ Open positions: {pos_data}
         )
         resp.raise_for_status()
         answer = resp.json()["content"][0]["text"]
+        # Save AI response
+        db.log_chat_message("ai", answer)
         return {"ok": True, "answer": answer}
     except Exception as e:
         return {"ok": False, "error": str(e)}, 500
+
+
+@app.route("/api/chat/history")
+@require_auth
+def api_chat_history():
+    """Get saved chat history."""
+    messages = db.get_chat_history(limit=50)
+    for m in messages:
+        m["time_str"] = datetime.fromtimestamp(m["timestamp"], tz=timezone.utc).strftime("%m/%d %H:%M")
+    return {"ok": True, "messages": messages}
+
+
+@app.route("/api/chat/clear", methods=["POST"])
+@require_auth
+def api_chat_clear():
+    """Clear chat history."""
+    db.clear_chat_history()
+    return {"ok": True}
 
 
 @app.route("/health")

@@ -274,4 +274,45 @@ def update_consensus_proposal(proposal_id, status):
         raise ValueError(f"No consensus proposal found with id={proposal_id}")
 
 
+def _init_chat_table():
+    conn = get_conn()
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp REAL NOT NULL,
+            role TEXT NOT NULL,
+            message TEXT NOT NULL
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+
+def log_chat_message(role, message):
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO chat_messages (timestamp, role, message) VALUES (?, ?, ?)",
+        (time.time(), role, message),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_chat_history(limit=50):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM chat_messages ORDER BY timestamp DESC LIMIT ?", (limit,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in reversed(rows)]
+
+
+def clear_chat_history():
+    conn = get_conn()
+    conn.execute("DELETE FROM chat_messages")
+    conn.commit()
+    conn.close()
+
+
 init_db()
+_init_chat_table()
